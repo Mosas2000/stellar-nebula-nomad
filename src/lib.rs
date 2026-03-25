@@ -2,6 +2,7 @@
 
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, Symbol, Vec};
 
+mod blueprint_factory;
 mod nebula_explorer;
 mod player_profile;
 mod resource_minter;
@@ -18,6 +19,7 @@ pub use resource_minter::{
     HarvestedResource, Resource,
 };
 pub use ship_nft::{ShipError, ShipNft};
+pub use blueprint_factory::{Blueprint, BlueprintError, BlueprintRarity};
 pub use player_profile::{PlayerProfile, ProfileError, ProgressUpdate};
 pub use session_manager::{Session, SessionError};
 pub use ship_registry::Ship;
@@ -174,5 +176,40 @@ impl NebulaNomadContract {
     /// Retrieve session data by ID.
     pub fn get_session(env: Env, session_id: u64) -> Result<Session, SessionError> {
         session_manager::get_session(&env, session_id)
+    }
+
+    // ─── Blueprint Factory ────────────────────────────────────────────────────
+
+    /// Mint a blueprint NFT from harvested resource components.
+    pub fn craft_blueprint(
+        env: Env,
+        owner: Address,
+        components: Vec<Symbol>,
+    ) -> Result<u64, BlueprintError> {
+        blueprint_factory::craft_blueprint(&env, owner, components)
+    }
+
+    /// Craft up to 2 blueprints in a single transaction.
+    pub fn batch_craft_blueprints(
+        env: Env,
+        owner: Address,
+        recipes: Vec<Vec<Symbol>>,
+    ) -> Result<Vec<u64>, BlueprintError> {
+        blueprint_factory::batch_craft_blueprints(&env, owner, recipes)
+    }
+
+    /// Consume a blueprint and permanently upgrade a ship.
+    pub fn apply_blueprint_to_ship(
+        env: Env,
+        owner: Address,
+        blueprint_id: u64,
+        ship_id: u64,
+    ) -> Result<(), BlueprintError> {
+        blueprint_factory::apply_blueprint_to_ship(&env, owner, blueprint_id, ship_id)
+    }
+
+    /// Retrieve a blueprint by ID.
+    pub fn get_blueprint(env: Env, blueprint_id: u64) -> Result<Blueprint, BlueprintError> {
+        blueprint_factory::get_blueprint(&env, blueprint_id)
     }
 }

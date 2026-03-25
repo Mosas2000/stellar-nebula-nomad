@@ -3,8 +3,9 @@
 use soroban_sdk::testutils::{Address as _, Events, Ledger, LedgerInfo};
 use soroban_sdk::{vec, Address, Bytes, BytesN, Env, Symbol, Vec};
 use stellar_nebula_nomad::{
-    CellType, NebulaNomadContract, NebulaNomadContractClient, NebulaCell, NebulaLayout,
-    ProfileError, ProgressUpdate, Rarity, Session, SessionError, ShipError, GRID_SIZE, TOTAL_CELLS,
+    Blueprint, BlueprintError, BlueprintRarity, CellType, NebulaNomadContract,
+    NebulaNomadContractClient, NebulaCell, NebulaLayout, ProfileError, ProgressUpdate, Rarity,
+    Session, SessionError, ShipError, GRID_SIZE, TOTAL_CELLS,
 };
 
 use proptest::prelude::*;
@@ -837,4 +838,112 @@ fn test_session_emits_started_event() {
     client.start_session(&player, &1u64);
     let events = env.events().all();
     assert!(!events.is_empty());
+}
+
+// ─── blueprint factory (issue #17) ────────────────────────────────────────────
+
+fn make_components(env: &Env, symbols: &[&str]) -> soroban_sdk::Vec<soroban_sdk::Symbol> {
+    let mut v = soroban_sdk::Vec::new(env);
+    for s in symbols {
+        v.push_back(soroban_sdk::Symbol::new(env, s));
+    }
+    v
+}
+
+#[test]
+fn test_craft_blueprint_success() {
+    let (env, client, player) = setup_env();
+    let components = make_components(&env, &["iron", "gas"]);
+    let id = client.craft_blueprint(&player, &components);
+    assert_eq!(id, 1);
+}
+
+#[test]
+fn test_craft_blueprint_rarity_common() {
+    let (env, client, player) = setup_env();
+    let components = make_components(&env, &["iron", "gas"]);
+    let id = client.craft_blueprint(&player, &components);
+    let bp = client.get_blueprint(&id);
+    assert_eq!(bp.rarity, BlueprintRarity::Common);
+    assert!(!bp.applied);
+}
+
+#[test]
+fn test_craft_blueprint_rarity_uncommon() {
+    let (env, client, player) = setup_env();
+    let components = make_components(&env, &["iron", "gas", "dust", "void"]);
+    let id = client.craft_blueprint(&player, &components);
+    let bp = client.get_blueprint(&id);
+    assert_eq!(bp.rarity, BlueprintRarity::Uncommon);
+}
+
+#[test]
+fn test_craft_blueprint_rarity_rare() {
+    let (env, client, player) = setup_env();
+    let components = make_components(&env, &["a", "b", "c", "d", "e", "f"]);
+    let id = client.craft_blueprint(&player, &components);
+    let bp = client.get_blueprint(&id);
+    assert_eq!(bp.rarity, BlueprintRarity::Rare);
+}
+
+#[test]
+#[should_panic]
+fn test_craft_blueprint_too_few_components_panics() {
+    let (env, client, player) = setup_env();
+    let components = make_components(&env, &["iron"]); // only 1 — must panic
+    client.craft_blueprint(&player, &components);
+}
+
+#[test]
+fn test_apply_blueprint_to_ship() {
+    let (env, client, player) = setup_env();
+    let components = make_components(&env, &["iron", "gas"]);
+    let bp_id = client.craft_blueprint(&player, &components);
+    client.apply_blueprint_to_ship(&player, &bp_id, &10u64);
+    let bp = client.get_blueprint(&bp_id);
+    assert!(bp.applied);
+}
+
+#[test]
+#[should_panic]
+fn test_apply_blueprint_twice_panics() {
+    let (env, client, player) = setup_env();
+    let components = make_components(&env, &["iron", "gas"]);
+    let bp_id = client.craft_blueprint(&player, &components);
+    client.apply_blueprint_to_ship(&player, &bp_id, &10u64);
+    client.apply_blueprint_to_ship(&player, &bp_id, &10u64); // already applied — must panic
+}
+
+#[test]
+#[should_panic]
+fn test_apply_blueprint_wrong_owner_panics() {
+    let (env, client, player) = setup_env();
+    let intruder = Address::generate(&env);
+    let components = make_components(&env, &["iron", "gas"]);
+    let bp_id = client.craft_blueprint(&player, &components);
+    client.apply_blueprint_to_ship(&intruder, &bp_id, &10u64); // not owner — must panic
+}
+
+#[test]
+fn test_batch_craft_blueprints() {
+    let (env, client, player) = setup_env();
+    let r1 = make_components(&env, &["iron", "gas"]);
+    let r2 = make_components(&env, &["dust", "void"]);
+    let mut recipes = soroban_sdk::Vec::new(&env);
+    recipes.push_back(r1);
+    recipes.push_back(r2);
+    let ids = client.batch_craft_blueprints(&player, &recipes);
+    assert_eq!(ids.len(), 2);
+}
+
+#[test]
+#[should_panic]
+fn test_batch_craft_exceeds_limit_panics() {
+    let (env, client, player) = setup_env();
+    let r = make_components(&env, &["iron", "gas"]);
+    let mut recipes = soroban_sdk::Vec::new(&env);
+    recipes.push_back(r.clone());
+    recipes.push_back(r.clone());
+    recipes.push_back(r); // 3 > MAX_BATCH_CRAFT — must panic
+    client.batch_craft_blueprints(&player, &recipes);
 }
