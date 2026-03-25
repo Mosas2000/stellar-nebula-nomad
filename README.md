@@ -159,31 +159,37 @@ soroban contract invoke \
 
 ## 🏗️ Architecture
 
+### Nebula Generation Flow (Mermaid)
+
+```mermaid
+graph TD
+    A[Player / dApp] -->|seed + address| B[scan_nebula]
+    B --> C[generate_nebula_layout]
+    B --> D[calculate_rarity_tier]
+    C --> E["SHA-256(seed ‖ ledger_seq ‖ timestamp)"]
+    E --> F[XorShift64 PRNG]
+    F --> G["16×16 NebulaLayout (256 cells)"]
+    G --> D
+    D --> H{Rarity Score}
+    H -->|0–49| I[Common]
+    H -->|50–99| J[Uncommon]
+    H -->|100–149| K[Rare]
+    H -->|150–199| L[Epic]
+    H -->|200+| M[Legendary]
+    B --> N["Emit NebulaScanned Event (layout hash)"]
+```
+
 ### Contract Interaction Diagram
 
-```
-┌─────────────────────────────────────────────────────────┐
-│              Player / dApp Interface                    │
-└────────────────────┬────────────────────────────────────┘
-                     │
-        ┌────────────┼────────────┬──────────────┐
-        │            │            │              │
-        ▼            ▼            ▼              ▼
-   ┌─────────┐ ┌──────────┐ ┌──────────┐ ┌─────────┐
-   │ Nebula  │ │ Resource │ │   Ship   │ │Ledger   │
-   │Explorer │ │ Minter   │ │Registry  │ │(Seed)   │
-   └────┬────┘ └────┬─────┘ └────┬─────┘ └─────────┘
-        │           │            │
-        └───────────┼────────────┘
-                    │
-        ┌───────────▼──────────┐
-        │  Stellar Ledger      │
-        │  (State Storage)     │
-        └──────────────────────┘
-
-┌───────────────────────────────────────────────────────────┐
-│                  Stellar Mainnet / Futurenet              │
-└───────────────────────────────────────────────────────────┘
+```mermaid
+graph TB
+    Player["Player / dApp Interface"] --> NE[Nebula Explorer]
+    Player --> RM[Resource Minter]
+    Player --> SR[Ship Registry]
+    NE -->|reads| Ledger["Stellar Ledger (Seed + State)"]
+    RM --> Ledger
+    SR --> Ledger
+    Ledger --> Stellar["Stellar Mainnet / Futurenet"]
 ```
 
 ### Module Breakdown
@@ -209,12 +215,13 @@ stellar-nebula-nomad/
 
 ### Data Flow
 
-1. **Player initiates scan** → Ship sends region_id to contract
-2. **Contract seeds RNG** → Uses Soroban ledger sequence + region_id
-3. **Procedural generation** → Nebula properties calculated deterministically
-4. **Results returned** → Density, color, resource level stored
-5. **Resource minting** → Player can mint discovered resources
-6. **Ownership recorded** → Stellar ledger maintains immutable history
+1. **Player initiates scan** → Provides a 32-byte seed + authenticates via `require_auth`
+2. **Entropy mixing** → Contract SHA-256 hashes: `seed ‖ ledger_sequence ‖ timestamp`
+3. **Procedural generation** → XorShift64 PRNG fills a 16×16 grid of `NebulaCell` structs (type + energy)
+4. **Rarity calculation** → On-chain math scores rare cell density + energy → `Rarity` enum (Common → Legendary)
+5. **Event emission** → `NebulaScanned` event published with layout hash for off-chain indexing
+6. **Resource minting** → Player can mint discovered resources
+7. **Ownership recorded** → Stellar ledger maintains immutable history
 
 ---
 
