@@ -14,6 +14,7 @@ mod ship_registry;
 mod dex_integration;
 mod difficulty_scaler;
 mod randomness_oracle;
+pub mod ship_upgrade;
 mod treasure_vault;
 
 pub use nebula_explorer::{
@@ -39,6 +40,7 @@ pub use difficulty_scaler::{
 pub use randomness_oracle::{
     get_entropy_pool, request_random_seed, verify_and_fallback, OracleError,
 };
+pub use ship_upgrade::{ShipState, ShipUpgradeError, UpgradeBlueprint};
 pub use treasure_vault::{
     claim_treasure, deposit_treasure, get_vault, TreasureVault, VaultError,
     DEFAULT_MIN_LOCK_DURATION,
@@ -137,7 +139,6 @@ impl NebulaNomadContract {
         resource_minter::auto_list_on_dex(&env, &resource, min_price)
     }
 
-<<<<<<< feat/game-mechanics
     // ─── DEX Integration (Issue #9) ──────────────────────────────────────
 
     /// Harvest resources and immediately list on DEX.
@@ -217,7 +218,8 @@ impl NebulaNomadContract {
     /// Get the current entropy pool.
     pub fn get_entropy_pool(env: Env) -> Vec<BytesN<32>> {
         randomness_oracle::get_entropy_pool(&env)
-=======
+    }
+
     // ─── Player Profile ───────────────────────────────────────────────────────
 
     /// Create a new on-chain player profile. Returns the assigned profile ID.
@@ -334,6 +336,42 @@ impl NebulaNomadContract {
     /// Retrieve a referral record by the new nomad's address.
     pub fn get_referral(env: Env, new_nomad: Address) -> Result<Referral, ReferralError> {
         referral_system::get_referral(&env, new_nomad)
->>>>>>> main
+    }
+
+    // ─── Ship Upgrade (Issue #7) ─────────────────────────────────────────
+
+    /// Initialise the upgrade config with a blueprint map. Admin-only, once.
+    pub fn init_upgrade_config(
+        env: Env,
+        admin: Address,
+        blueprints: soroban_sdk::Map<Symbol, UpgradeBlueprint>,
+    ) -> Result<(), ShipUpgradeError> {
+        ship_upgrade::init_upgrade_config(&env, &admin, blueprints)
+    }
+
+    /// Apply a single component upgrade to a ship, burning the required
+    /// resource from the player's harvested balance.
+    pub fn apply_upgrade(
+        env: Env,
+        player: Address,
+        ship_id: u64,
+        component: Symbol,
+    ) -> Result<ShipState, ShipUpgradeError> {
+        ship_upgrade::apply_upgrade(&env, &player, ship_id, component)
+    }
+
+    /// Apply up to 2 upgrades in a single transaction.
+    pub fn batch_upgrade(
+        env: Env,
+        player: Address,
+        ship_id: u64,
+        components: Vec<Symbol>,
+    ) -> Result<Vec<ShipState>, ShipUpgradeError> {
+        ship_upgrade::batch_upgrade(&env, &player, ship_id, components)
+    }
+
+    /// Read the current upgrade state of a ship.
+    pub fn get_ship_state(env: Env, ship_id: u64) -> Option<ShipState> {
+        ship_upgrade::get_ship_state(&env, ship_id)
     }
 }
