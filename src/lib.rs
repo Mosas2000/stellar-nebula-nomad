@@ -24,6 +24,11 @@ mod governance;
 mod theme_customizer;
 mod indexer_callbacks;
 
+mod contract_versioning;
+mod gas_recovery;
+mod bounty_board;
+mod recycling_crafter;
+
 pub use nebula_explorer::{
     calculate_rarity_tier, compute_layout_hash, generate_nebula_layout, CellType, NebulaCell,
     NebulaLayout, Rarity, GRID_SIZE, TOTAL_CELLS,
@@ -63,6 +68,24 @@ pub use treasure_vault::{
     claim_treasure, deposit_treasure, get_vault, TreasureVault, VaultError,
     DEFAULT_MIN_LOCK_DURATION,
 };
+pub use contract_versioning::{
+    initialize_version, get_version, check_compatibility, set_auto_migrate,
+    migrate_data, is_auto_migrate_enabled, get_migration_record,
+    CURRENT_VERSION, MIGRATION_BATCH_SIZE, VersioningError, MigrationRecord,
+};
+pub use gas_recovery::{
+    initialize_refund, set_refund_percentage, request_refund,
+    verify_refund_eligibility, process_refund_batch, get_refund_request,
+    DEFAULT_REFUND_BPS, REFUND_BATCH_SIZE, RefundError, RefundRequest,
+};
+pub use bounty_board::{
+    initialize_bounty_board, set_bounty_expiry, post_bounty, claim_bounty,
+    get_bounty, DEFAULT_BOUNTY_EXPIRY, MAX_ACTIVE_BOUNTIES, BountyError, Bounty,
+};
+pub use recycling_crafter::{
+    initialize_recycling, recycle_resource, craft_new_item, get_recipe,
+    RECYCLE_CRAFT_BATCH_SIZE, RecyclingError, Recipe, CraftingResult,
+};
 
 #[contract]
 pub struct NebulaNomadContract;
@@ -96,6 +119,78 @@ impl NebulaNomadContract {
         nebula_explorer::emit_nebula_scanned(&env, &player, &layout_hash, &rarity);
 
         (layout, rarity)
+    }
+
+    // === Contract Versioning API ===
+
+    pub fn initialize_version(env: Env) {
+        contract_versioning::initialize_version(&env);
+    }
+
+    pub fn get_version(env: Env) -> u32 {
+        contract_versioning::get_version(&env)
+    }
+
+    pub fn check_compatibility(env: Env, version: u32) {
+        contract_versioning::check_compatibility(&env, version).unwrap();
+    }
+
+    pub fn set_auto_migrate(env: Env, caller: Address, enabled: bool) {
+        contract_versioning::set_auto_migrate(&env, &caller, enabled);
+    }
+
+    pub fn migrate_data(env: Env, caller: Address, old_version: u32, new_version: u32, batch: Vec<Bytes>) -> MigrationRecord {
+        contract_versioning::migrate_data(&env, &caller, old_version, new_version, batch).unwrap()
+    }
+
+    // === Gas Recovery API ===
+
+    pub fn initialize_refund(env: Env, admin: Address) {
+        gas_recovery::initialize_refund(&env, &admin);
+    }
+
+    pub fn set_refund_percentage(env: Env, admin: Address, bps: u32) {
+        gas_recovery::set_refund_percentage(&env, &admin, bps).unwrap();
+    }
+
+    pub fn request_refund(env: Env, caller: Address, tx_hash: BytesN<32>, gas_used: u64) -> RefundRequest {
+        gas_recovery::request_refund(&env, &caller, tx_hash, gas_used).unwrap()
+    }
+
+    pub fn process_refund_batch(env: Env, admin: Address, tx_hashes: Vec<BytesN<32>>) -> u64 {
+        gas_recovery::process_refund_batch(&env, &admin, tx_hashes).unwrap()
+    }
+
+    // === Bounty Board API ===
+
+    pub fn initialize_bounty_board(env: Env, admin: Address) {
+        bounty_board::initialize_bounty_board(&env, &admin);
+    }
+
+    pub fn post_bounty(env: Env, poster: Address, description: String, reward: i128) -> Bounty {
+        bounty_board::post_bounty(&env, &poster, description, reward).unwrap()
+    }
+
+    pub fn claim_bounty(env: Env, claimer: Address, bounty_id: u64, proof: BytesN<32>) -> Bounty {
+        bounty_board::claim_bounty(&env, &claimer, bounty_id, proof).unwrap()
+    }
+
+    // === Recycling/Crafting API ===
+
+    pub fn initialize_recycling(env: Env) {
+        recycling_crafter::initialize_recycling(&env);
+    }
+
+    pub fn recycle_resource(env: Env, caller: Address, resource: Symbol, amount: u32) -> Vec<(Symbol, u32)> {
+        recycling_crafter::recycle_resource(&env, &caller, resource, amount).unwrap()
+    }
+
+    pub fn craft_new_item(env: Env, caller: Address, recipe_id: u64, inputs: Vec<Symbol>, quantities: Vec<u32>) -> CraftingResult {
+        recycling_crafter::craft_new_item(&env, &caller, recipe_id, inputs, quantities).unwrap()
+    }
+
+    pub fn get_recipe(env: Env, recipe_id: u64) -> Recipe {
+        recycling_crafter::get_recipe(&env, recipe_id).unwrap()
     }
 
     /// Mint a new ship NFT for `owner` with initial stats derived from
