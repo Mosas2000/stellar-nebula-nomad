@@ -3,6 +3,7 @@
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, String, Symbol, Vec, symbol_short};
 
 mod blueprint_factory;
+mod gifting_system;
 mod nebula_explorer;
 mod player_profile;
 mod referral_system;
@@ -17,6 +18,7 @@ mod difficulty_scaler;
 mod emergency_controls;
 mod metadata_resolver;
 mod randomness_oracle;
+pub mod ship_upgrade;
 mod treasure_vault;
 
 mod yield_farming;
@@ -37,7 +39,8 @@ mod audit_logger;
 mod sustainability_metrics;
 mod anomaly_classifier;
 mod shared_lib;
-mod composability_examples;
+mod fractional_resources;
+mod yield_forecast;
 
 mod storage_optim;
 mod state_snapshot;
@@ -46,6 +49,11 @@ mod prize_distributor;
 mod portal_registry;
 mod constellation_mapper;
 mod entanglement_comms;
+mod wormhole_traveler;
+mod alliance_manager;
+mod market_oracle;
+mod audio_seed_generator;
+mod navigation_planner;
 
 pub use nebula_explorer::{
     calculate_rarity_tier, compute_layout_hash, generate_nebula_layout, CellType, NebulaCell,
@@ -53,7 +61,7 @@ pub use nebula_explorer::{
 };
 pub use resource_minter::{
     auto_list_on_dex, harvest_resources, AssetId, DexOffer, HarvestError, HarvestResult,
-    HarvestedResource, Resource,
+    HarvestedResource, Resource, ResourceKey,
 };
 pub use ship_nft::{ShipError, ShipNft};
 pub use blueprint_factory::{Blueprint, BlueprintError, BlueprintRarity};
@@ -82,10 +90,13 @@ pub use metadata_resolver::{
 pub use randomness_oracle::{
     get_entropy_pool, request_random_seed, verify_and_fallback, OracleError,
 };
+pub use mobile_views::{get_mobile_dashboard, get_quick_scan_preview, MobileDashboard, MobileViewError, QuickScanPreview};
+pub use ship_upgrade::{ShipState, ShipUpgradeError, UpgradeBlueprint};
 pub use treasure_vault::{
     claim_treasure, deposit_treasure, get_vault, TreasureVault, VaultError,
     DEFAULT_MIN_LOCK_DURATION,
 };
+pub use gifting_system::{Gift, GiftError};
 pub use contract_versioning::{
     initialize_version, get_version, check_compatibility, set_auto_migrate,
     migrate_data, is_auto_migrate_enabled, get_migration_record,
@@ -125,10 +136,18 @@ pub use sustainability_metrics::{claim_sustainability_reward, get_footprint, rec
 pub use anomaly_classifier::{classify_anomaly, classify_batch, get_classification, refine_classification, AnomalyError, ClassificationRecord};
 pub use shared_lib::{calculate_yield, validate_address, SharedError};
 
-pub use composability_examples::{
-    compose_with_external_contract, validate_composable_response, batch_compose,
-    sanitize_input, emit_batch_summary, record_composition_gas, get_last_composition_gas,
-    CompositionBuilder, ComposableResponse, ComposabilityError,
+pub use fractional_resources::{
+    initialize as initialize_fractional, fractionalize_resource, merge_fractions,
+    transfer_share, get_share, get_owner_shares, get_total_shares,
+    get_original_resource, is_share_owner, update_config as update_fractional_config,
+    FractionalShare, OriginalResource, FractionalConfig,
+    FractionalError, MAX_FRACTIONS_PER_TX, MIN_SHARE_SIZE,
+pub use yield_forecast::{
+    initialize as initialize_forecast, generate_yield_forecast, update_forecast_model,
+    batch_generate_forecasts, get_cached_forecast, get_player_history, get_history_count,
+    get_model_params, get_model_version, update_model_params, clear_stale_forecasts,
+    YieldDataPoint, YieldForecast, ModelParams, ForecastError,
+    MAX_HISTORY_POINTS, MAX_FORECAST_DAYS, MAX_FORECAST_BURST,
 };
 
 pub use storage_optim::{
@@ -164,6 +183,32 @@ pub use entanglement_comms::{
     EntanglementError, EntanglementPair, EntangledMessage,
     PAIR_LIFETIME_SECS, MAX_MESSAGE_BURST,
 };
+pub use wormhole_traveler::{
+    open_wormhole, traverse_wormhole, get_wormhole, get_active_wormholes,
+    get_travel_history, cleanup_expired_wormholes, calculate_travel_cost,
+    verify_wormhole_link, Wormhole, TravelRecord, WormholeError,
+    MAX_SIMULTANEOUS_WORMHOLES, WORMHOLE_LIFETIME_SECS,
+};
+pub use alliance_manager::{
+    found_alliance, join_alliance, leave_alliance, contribute_to_treasury,
+    get_alliance, get_alliance_treasury, get_member_contribution, get_player_alliance,
+    Alliance, MembershipRecord, AllianceError, MAX_MEMBERS_PER_ALLIANCE,
+};
+pub use market_oracle::{
+    initialize_oracle, update_resource_price, batch_update_prices,
+    get_current_market_rate, get_price_data, get_price_history, add_oracle_source,
+    PriceData, OracleError as MarketOracleError, MAX_BATCH_UPDATE,
+};
+pub use audio_seed_generator::{
+    initialize_presets, generate_music_seed, get_instrument_layer, get_all_layers,
+    get_nebula_seed, get_preset, MusicSeed, InstrumentParams, AudioError,
+    INSTRUMENT_PRESETS, MAX_LAYERS_PER_NEBULA,
+};
+pub use navigation_planner::{
+    initialize_nav_graph, add_nebula_connection, add_nebula_connections_batch,
+    calculate_optimal_route, validate_route_safety, get_neighbors, get_connection,
+    NavError, NavPath, RouteEdge, NavConfig, MAX_ROUTE_HOPS, MAX_CONNECTIONS_PER_BATCH,
+};
 
 #[contract]
 pub struct NebulaNomadContract;
@@ -171,31 +216,23 @@ pub struct NebulaNomadContract;
 #[contractimpl]
 impl NebulaNomadContract {
     /// Generate a 16x16 procedural nebula map using ledger-seeded PRNG.
-    ///
-    /// Combines the supplied `seed` with on-chain ledger sequence and
-    /// timestamp. The player must authorize the call.
     pub fn generate_nebula_layout(env: Env, seed: BytesN<32>, player: Address) -> NebulaLayout {
         player.require_auth();
         nebula_explorer::generate_nebula_layout(&env, &seed, &player)
     }
 
-    /// Calculate the rarity tier of a nebula layout using on-chain
-    /// verifiable math (no off-chain RNG).
+    /// Calculate the rarity tier of a nebula layout.
     pub fn calculate_rarity_tier(env: Env, layout: NebulaLayout) -> Rarity {
         nebula_explorer::calculate_rarity_tier(&env, &layout)
     }
 
-    /// Full scan: generates layout, calculates rarity, and emits a
-    /// `NebulaScanned` event containing the layout hash.
+    /// Full scan: generates layout, calculates rarity, emits NebulaScanned event.
     pub fn scan_nebula(env: Env, seed: BytesN<32>, player: Address) -> (NebulaLayout, Rarity) {
         player.require_auth();
-
         let layout = nebula_explorer::generate_nebula_layout(&env, &seed, &player);
         let rarity = nebula_explorer::calculate_rarity_tier(&env, &layout);
         let layout_hash = nebula_explorer::compute_layout_hash(&env, &layout);
-
         nebula_explorer::emit_nebula_scanned(&env, &player, &layout_hash, &rarity);
-
         (layout, rarity)
     }
 
@@ -299,7 +336,7 @@ impl NebulaNomadContract {
         result
     }
 
-    /// Batch-mint up to 3 ship NFTs in one transaction.
+    /// Batch-mint up to 3 ship NFTs.
     pub fn batch_mint_ships(
         env: Env,
         owner: Address,
@@ -314,7 +351,7 @@ impl NebulaNomadContract {
         result
     }
 
-    /// Transfer ship ownership to `new_owner`.
+    /// Transfer ship ownership.
     pub fn transfer_ownership(
         env: Env,
         ship_id: u64,
@@ -340,8 +377,7 @@ impl NebulaNomadContract {
         ship_nft::get_ships_by_owner(&env, &owner)
     }
 
-    /// Gas-optimized single-invocation harvest that updates balances,
-    /// emits harvest telemetry, and creates an auto-list offer hook.
+    /// Gas-optimized harvest.
     pub fn harvest_resources(
         env: Env,
         ship_id: u64,
@@ -382,7 +418,7 @@ impl NebulaNomadContract {
         dex_integration::cancel_listing(&env, &owner, offer_id)
     }
 
-    // ─── Treasure Vault (Issue #18) ──────────────────────────────────────
+    // ─── Treasure Vault ───────────────────────────────────────────────────
 
     /// Deposit resources into a time-locked treasure vault.
     pub fn deposit_treasure(
@@ -416,7 +452,7 @@ impl NebulaNomadContract {
         treasure_vault::get_vault(&env, vault_id)
     }
 
-    // ─── Difficulty Scaling (Issue #26) ──────────────────────────────────
+    // ─── Difficulty Scaling ───────────────────────────────────────────────
 
     /// Calculate difficulty scaling for a player level.
     pub fn calculate_difficulty(
@@ -435,7 +471,7 @@ impl NebulaNomadContract {
         difficulty_scaler::apply_scaling_to_layout(&env, base_anomaly_count, player_level)
     }
 
-    // ─── Randomness Oracle (Issue #28) ───────────────────────────────────
+    // ─── Randomness Oracle ────────────────────────────────────────────────
 
     /// Request a ledger-mixed random seed.
     pub fn request_random_seed(env: Env) -> BytesN<32> {
@@ -452,14 +488,14 @@ impl NebulaNomadContract {
         randomness_oracle::get_entropy_pool(&env)
     }
 
-    // ─── Player Profile ───────────────────────────────────────────────────────
+    // ─── Player Profile ───────────────────────────────────────────────────
 
-    /// Create a new on-chain player profile. Returns the assigned profile ID.
+    /// Create a new on-chain player profile.
     pub fn initialize_profile(env: Env, owner: Address) -> Result<u64, ProfileError> {
         player_profile::initialize_profile(&env, owner)
     }
 
-    /// Update scan count and essence earned after a harvest. Owner-only.
+    /// Update scan count and essence earned after a harvest.
     pub fn update_progress(
         env: Env,
         caller: Address,
@@ -470,7 +506,7 @@ impl NebulaNomadContract {
         player_profile::update_progress(&env, caller, profile_id, scan_count, essence)
     }
 
-    /// Apply up to 5 stat updates in a single transaction for multi-scan runs.
+    /// Apply up to 5 stat updates in a single transaction.
     pub fn batch_update_progress(
         env: Env,
         caller: Address,
@@ -484,14 +520,14 @@ impl NebulaNomadContract {
         player_profile::get_profile(&env, profile_id)
     }
 
-    // ─── Session Manager ──────────────────────────────────────────────────────
+    // ─── Session Manager ──────────────────────────────────────────────────
 
-    /// Start a timed nebula exploration session for a ship. Max 3 per player.
+    /// Start a timed nebula exploration session for a ship.
     pub fn start_session(env: Env, owner: Address, ship_id: u64) -> Result<u64, SessionError> {
         session_manager::start_session(&env, owner, ship_id)
     }
 
-    /// Close a session. Owner can force-close; anyone can clean up expired ones.
+    /// Close a session.
     pub fn expire_session(
         env: Env,
         caller: Address,
@@ -505,7 +541,7 @@ impl NebulaNomadContract {
         session_manager::get_session(&env, session_id)
     }
 
-    // ─── Blueprint Factory ────────────────────────────────────────────────────
+    // ─── Blueprint Factory ────────────────────────────────────────────────
 
     /// Mint a blueprint NFT from harvested resource components.
     pub fn craft_blueprint(
@@ -540,9 +576,9 @@ impl NebulaNomadContract {
         blueprint_factory::get_blueprint(&env, blueprint_id)
     }
 
-    // ─── Referral System ──────────────────────────────────────────────────────
+    // ─── Referral System ──────────────────────────────────────────────────
 
-    /// Record an on-chain referral from `referrer` for `new_nomad`.
+    /// Record an on-chain referral.
     pub fn register_referral(
         env: Env,
         referrer: Address,
@@ -551,12 +587,12 @@ impl NebulaNomadContract {
         referral_system::register_referral(&env, referrer, new_nomad)
     }
 
-    /// Mark that `nomad` has completed their first scan, unlocking the reward.
+    /// Mark first scan completed, unlocking referral reward.
     pub fn mark_first_scan(env: Env, nomad: Address) -> Result<(), ReferralError> {
         referral_system::mark_first_scan(&env, nomad)
     }
 
-    /// Claim the essence referral reward. One-time, capped at 10 claims/day.
+    /// Claim the essence referral reward.
     pub fn claim_referral_reward(
         env: Env,
         referrer: Address,
@@ -565,9 +601,32 @@ impl NebulaNomadContract {
         referral_system::claim_referral_reward(&env, referrer, new_nomad)
     }
 
-    /// Retrieve a referral record by the new nomad's address.
+    /// Retrieve a referral record.
     pub fn get_referral(env: Env, new_nomad: Address) -> Result<Referral, ReferralError> {
         referral_system::get_referral(&env, new_nomad)
+    }
+
+    // ─── Cross-Player Resource Gifting (#27) ──────────────────────────────
+
+    /// Send a resource gift to another player.
+    pub fn send_gift(
+        env: Env,
+        sender: Address,
+        receiver: Address,
+        resource: AssetId,
+        amount: i128,
+    ) -> Result<u64, GiftError> {
+        gifting_system::send_gift(&env, sender, receiver, resource, amount)
+    }
+
+    /// Accept a pending gift and claim the resources.
+    pub fn accept_gift(env: Env, receiver: Address, gift_id: u64) -> Result<(), GiftError> {
+        gifting_system::accept_gift(&env, receiver, gift_id)
+    }
+
+    /// Read a gift by ID.
+    pub fn get_gift(env: Env, gift_id: u64) -> Option<Gift> {
+        gifting_system::get_gift(&env, gift_id)
     }
 
     // ─── Yield Farming (Issue #36) ───────────────────────────────────────────
@@ -1239,33 +1298,427 @@ impl NebulaNomadContract {
         entanglement_comms::get_message_count(&env, pair_id)
     }
 
-    // ─── Contract Composability API (Issue #86) ──────────────────────────
+    // ─── Fractional Resource Ownership API (Issue #89) ────────────────────
 
-    /// Standardized cross-contract caller with input sanitization.
-    pub fn compose_with_external_contract(
+    /// Initialize the fractional resource system.
+    pub fn initialize_fractional(env: Env, admin: Address) -> Result<(), FractionalError> {
+        fractional_resources::initialize(&env, &admin)
+    }
+
+    /// Fractionalize a resource into divisible shares.
+    pub fn fractionalize_resource(
         env: Env,
-        target: Address,
-        method: Symbol,
-        args: Bytes,
-    ) -> Result<ComposableResponse, ComposabilityError> {
-        composability_examples::compose_with_external_contract(&env, &target, method, &args)
+        owner: Address,
+        resource_type: Symbol,
+        total_amount: u32,
+        shares: u32,
+    ) -> Result<Vec<u64>, FractionalError> {
+        fractional_resources::fractionalize_resource(&env, &owner, resource_type, total_amount, shares)
     }
 
-    /// Validate a composable response.
-    pub fn validate_composable_response(env: Env, response: BytesN<64>) -> Result<bool, ComposabilityError> {
-        composability_examples::validate_composable_response(&env, &response)
-    }
-
-    /// Batch composition - call multiple contracts in sequence.
-    pub fn batch_compose(
+    /// Merge fractional shares back into a whole resource.
+    pub fn merge_fractions(
         env: Env,
-        calls: Vec<(Address, Symbol, Bytes)>,
-    ) -> Vec<ComposableResponse> {
-        composability_examples::batch_compose(&env, calls)
+        owner: Address,
+        share_ids: Vec<u64>,
+    ) -> Result<u32, FractionalError> {
+        fractional_resources::merge_fractions(&env, &owner, share_ids)
     }
 
-    /// Get the last composition gas used.
-    pub fn get_last_composition_gas(env: Env) -> u64 {
-        composability_examples::get_last_composition_gas(&env)
+    /// Transfer a fractional share to another owner.
+    pub fn transfer_share(
+        env: Env,
+        from: Address,
+        to: Address,
+        share_id: u64,
+    ) -> Result<FractionalShare, FractionalError> {
+        fractional_resources::transfer_share(&env, &from, &to, share_id)
+    }
+
+    /// Get a fractional share by ID.
+    pub fn get_share(env: Env, share_id: u64) -> Option<FractionalShare> {
+        fractional_resources::get_share(&env, share_id)
+    }
+
+    /// Get all share IDs owned by an address.
+    pub fn get_owner_shares(env: Env, owner: Address) -> Vec<u64> {
+        fractional_resources::get_owner_shares(&env, &owner)
+    }
+
+    /// Get the total number of shares created.
+    pub fn get_total_shares(env: Env) -> u64 {
+        fractional_resources::get_total_shares(&env)
+    }
+
+    /// Get original resource data.
+    pub fn get_original_resource(env: Env, resource_type: Symbol) -> Option<OriginalResource> {
+        fractional_resources::get_original_resource(&env, resource_type)
+    }
+
+    /// Check if an address owns a specific share.
+    pub fn is_share_owner(env: Env, owner: Address, share_id: u64) -> bool {
+        fractional_resources::is_share_owner(&env, &owner, share_id)
+    }
+
+    /// Update fractionalization config (admin only).
+    pub fn update_fractional_config(
+        env: Env,
+        admin: Address,
+        min_share_size: u32,
+        max_fractions: u32,
+    ) -> Result<FractionalConfig, FractionalError> {
+        fractional_resources::update_config(&env, &admin, min_share_size, max_fractions)
+    // ─── Yield Forecasting API (Issue #90) ─────────────────────────────────
+
+    /// Initialize the yield forecasting system.
+    pub fn initialize_forecast(env: Env, admin: Address) -> Result<(), ForecastError> {
+        yield_forecast::initialize(&env, &admin)
+    }
+
+    /// Generate a yield forecast for a player.
+    pub fn generate_yield_forecast(
+        env: Env,
+        player: Address,
+        days: u32,
+    ) -> Result<YieldForecast, ForecastError> {
+        yield_forecast::generate_yield_forecast(&env, &player, days)
+    }
+
+    /// Update the forecast model with new data.
+    pub fn update_forecast_model(
+        env: Env,
+        player: Address,
+        data_point: YieldDataPoint,
+    ) -> Result<ModelParams, ForecastError> {
+        yield_forecast::update_forecast_model(&env, &player, data_point)
+    }
+
+    /// Batch generate forecasts for multiple players.
+    pub fn batch_generate_forecasts(
+        env: Env,
+        players: Vec<(Address, u32)>,
+    ) -> Vec<Result<YieldForecast, ForecastError>> {
+        yield_forecast::batch_generate_forecasts(&env, players)
+    }
+
+    /// Get cached forecast for a player.
+    pub fn get_cached_forecast(env: Env, player: Address) -> Option<YieldForecast> {
+        yield_forecast::get_cached_forecast(&env, &player)
+    }
+
+    /// Get historical data for a player.
+    pub fn get_player_history(env: Env, player: Address) -> Vec<YieldDataPoint> {
+        yield_forecast::get_player_history(&env, &player)
+    }
+
+    /// Get number of historical data points for a player.
+    pub fn get_history_count(env: Env, player: Address) -> u32 {
+        yield_forecast::get_history_count(&env, &player)
+    }
+
+    /// Get current model parameters.
+    pub fn get_model_params(env: Env) -> Option<ModelParams> {
+        yield_forecast::get_model_params(&env)
+    }
+
+    /// Get current model version.
+    pub fn get_model_version(env: Env) -> u32 {
+        yield_forecast::get_model_version(&env)
+    }
+
+    /// Update model parameters (admin only).
+    pub fn update_model_params(
+        env: Env,
+        admin: Address,
+        moving_average_window: u32,
+        trend_weight: u32,
+        volatility_adjustment: u32,
+    ) -> Result<ModelParams, ForecastError> {
+        yield_forecast::update_model_params(&env, &admin, moving_average_window, trend_weight, volatility_adjustment)
+    // ─── Inter-Nebula Wormhole Travel System (Issue #77) ─────────────────────
+
+    /// Open a new wormhole between two nebulae with verifiable travel link.
+    pub fn open_wormhole(
+        env: Env,
+        creator: Address,
+        origin_nebula: u64,
+        destination: u64,
+    ) -> Result<u64, WormholeError> {
+        let result = wormhole_traveler::open_wormhole(&env, creator.clone(), origin_nebula, destination);
+        if result.is_ok() {
+            let mut details = [0u8; 128];
+            details[0..8].copy_from_slice(&origin_nebula.to_be_bytes());
+            details[8..16].copy_from_slice(&destination.to_be_bytes());
+            let details_bytes = BytesN::from_array(&env, &details);
+            let _ = audit_logger::log_audit_event(&env, Some(&creator), symbol_short!("ow"), details_bytes);
+        }
+        result
+    }
+
+    /// Traverse an existing wormhole with energy cost validation and state sync.
+    pub fn traverse_wormhole(
+        env: Env,
+        traveler: Address,
+        ship_id: u64,
+        wormhole_id: u64,
+    ) -> Result<TravelRecord, WormholeError> {
+        let result = wormhole_traveler::traverse_wormhole(&env, traveler.clone(), ship_id, wormhole_id);
+        if result.is_ok() {
+            let mut details = [0u8; 128];
+            details[0..8].copy_from_slice(&ship_id.to_be_bytes());
+            details[8..16].copy_from_slice(&wormhole_id.to_be_bytes());
+            let details_bytes = BytesN::from_array(&env, &details);
+            let _ = audit_logger::log_audit_event(&env, Some(&traveler), symbol_short!("tw"), details_bytes);
+        }
+        result
+    }
+
+    /// Get wormhole details by ID.
+    pub fn get_wormhole(env: Env, wormhole_id: u64) -> Option<Wormhole> {
+        wormhole_traveler::get_wormhole(&env, wormhole_id)
+    }
+
+    /// Get all active wormholes.
+    pub fn get_active_wormholes(env: Env) -> Vec<u64> {
+        wormhole_traveler::get_active_wormholes(&env)
+    }
+
+    /// Get travel history for a ship.
+    pub fn get_travel_history(env: Env, ship_id: u64) -> Vec<TravelRecord> {
+        wormhole_traveler::get_travel_history(&env, ship_id)
+    }
+
+    /// Clean up expired wormholes (maintenance function).
+    pub fn cleanup_expired_wormholes(env: Env) -> u32 {
+        let cleaned = wormhole_traveler::cleanup_expired_wormholes(&env);
+        let mut details = [0u8; 128];
+        details[0..4].copy_from_slice(&cleaned.to_be_bytes());
+        let details_bytes = BytesN::from_array(&env, &details);
+        let _ = audit_logger::log_audit_event(&env, None, symbol_short!("cw"), details_bytes);
+        cleaned
+    }
+
+    /// Calculate travel cost between two nebulae.
+    pub fn calculate_travel_cost(env: Env, origin_nebula: u64, destination: u64) -> u32 {
+        wormhole_traveler::calculate_travel_cost(origin_nebula, destination)
+    }
+
+    /// Verify wormhole link integrity.
+    pub fn verify_wormhole_link(env: Env, wormhole_id: u64, provided_link: BytesN<32>) -> bool {
+        wormhole_traveler::verify_wormhole_link(&env, wormhole_id, provided_link)
+    }
+
+    // ─── Player Alliance and Faction System (Issue #79) ──────────────────
+
+    /// Found a new alliance with initial treasury.
+    pub fn found_alliance(
+        env: Env,
+        founder: Address,
+        name: String,
+    ) -> Result<u64, AllianceError> {
+        let result = alliance_manager::found_alliance(&env, founder.clone(), name);
+        if result.is_ok() {
+            let mut details = [0u8; 128];
+            if let Ok(alliance_id) = result {
+                details[0..8].copy_from_slice(&alliance_id.to_be_bytes());
+            }
+            let details_bytes = BytesN::from_array(&env, &details);
+            let _ = audit_logger::log_audit_event(&env, Some(&founder), symbol_short!("fa"), details_bytes);
+        }
+        result
+    }
+
+    /// Join an existing alliance.
+    pub fn join_alliance(
+        env: Env,
+        alliance_id: u64,
+        player: Address,
+    ) -> Result<MembershipRecord, AllianceError> {
+        let result = alliance_manager::join_alliance(&env, alliance_id, player.clone());
+        if result.is_ok() {
+            let mut details = [0u8; 128];
+            details[0..8].copy_from_slice(&alliance_id.to_be_bytes());
+            let details_bytes = BytesN::from_array(&env, &details);
+            let _ = audit_logger::log_audit_event(&env, Some(&player), symbol_short!("ja"), details_bytes);
+        }
+        result
+    }
+
+    /// Leave an alliance.
+    pub fn leave_alliance(env: Env, player: Address) -> Result<(), AllianceError> {
+        alliance_manager::leave_alliance(&env, player)
+    }
+
+    /// Contribute resources to alliance treasury.
+    pub fn contribute_to_treasury(
+        env: Env,
+        player: Address,
+        amount: i128,
+    ) -> Result<i128, AllianceError> {
+        alliance_manager::contribute_to_treasury(&env, player, amount)
+    }
+
+    /// Get alliance details.
+    pub fn get_alliance(env: Env, alliance_id: u64) -> Result<Alliance, AllianceError> {
+        alliance_manager::get_alliance(&env, alliance_id)
+    }
+
+    /// Get alliance treasury balance.
+    pub fn get_alliance_treasury(env: Env, alliance_id: u64) -> i128 {
+        alliance_manager::get_alliance_treasury(&env, alliance_id)
+    }
+
+    /// Get member's contribution to alliance.
+    pub fn get_member_contribution(env: Env, alliance_id: u64, member: Address) -> i128 {
+        alliance_manager::get_member_contribution(&env, alliance_id, member)
+    }
+
+    /// Get player's current alliance ID.
+    pub fn get_player_alliance(env: Env, player: Address) -> Option<u64> {
+        alliance_manager::get_player_alliance(&env, player)
+    }
+
+    // ─── Dynamic Resource Market Oracle Integration (Issue #78) ──────────
+
+    /// Initialize the market oracle with admin and default sources.
+    pub fn initialize_oracle(
+        env: Env,
+        admin: Address,
+        sources: Vec<Address>,
+    ) -> Result<(), MarketOracleError> {
+        market_oracle::initialize_oracle(&env, admin, sources)
+    }
+
+    /// Update resource price with timestamp verification.
+    pub fn update_resource_price(
+        env: Env,
+        admin: Address,
+        resource: Symbol,
+        new_price: i128,
+    ) -> Result<PriceData, MarketOracleError> {
+        market_oracle::update_resource_price(&env, admin, resource, new_price)
+    }
+
+    /// Batch update multiple resource prices.
+    pub fn batch_update_prices(
+        env: Env,
+        admin: Address,
+        resources: Vec<Symbol>,
+        prices: Vec<i128>,
+    ) -> Result<Vec<PriceData>, MarketOracleError> {
+        market_oracle::batch_update_prices(&env, admin, resources, prices)
+    }
+
+    /// Get current market rate for a resource (pure view).
+    pub fn get_current_market_rate(env: Env, resource: Symbol) -> Result<i128, MarketOracleError> {
+        market_oracle::get_current_market_rate(&env, resource)
+    }
+
+    /// Get price data with metadata.
+    pub fn get_price_data(env: Env, resource: Symbol) -> Result<PriceData, MarketOracleError> {
+        market_oracle::get_price_data(&env, resource)
+    }
+
+    /// Get 24h price history for a resource.
+    pub fn get_price_history(env: Env, resource: Symbol) -> Vec<PriceData> {
+        market_oracle::get_price_history(&env, resource)
+    }
+
+    /// Add oracle source (admin only).
+    pub fn add_oracle_source(
+        env: Env,
+        admin: Address,
+        new_source: Address,
+    ) -> Result<(), MarketOracleError> {
+        market_oracle::add_oracle_source(&env, admin, new_source)
+    }
+
+    // ─── Procedural Music and Sound Seed Generator (Issue #80) ───────────
+
+    /// Initialize default instrument presets.
+    pub fn initialize_presets(env: Env) {
+        audio_seed_generator::initialize_presets(&env)
+    }
+
+    /// Generate deterministic music seed from nebula state.
+    pub fn generate_music_seed(env: Env, nebula_id: u64) -> Result<MusicSeed, AudioError> {
+        audio_seed_generator::generate_music_seed(&env, nebula_id)
+    }
+
+    /// Get instrument layer parameters for frontend rendering.
+    pub fn get_instrument_layer(
+        env: Env,
+        seed: BytesN<32>,
+        layer: u32,
+    ) -> Result<InstrumentParams, AudioError> {
+        audio_seed_generator::get_instrument_layer(&env, seed, layer)
+    }
+
+    /// Get all 8 layers for a nebula instantly.
+    pub fn get_all_layers(env: Env, nebula_id: u64) -> Result<Vec<InstrumentParams>, AudioError> {
+        audio_seed_generator::get_all_layers(&env, nebula_id)
+    }
+
+    /// Get stored seed for a nebula.
+    pub fn get_nebula_seed(env: Env, nebula_id: u64) -> Option<BytesN<32>> {
+        audio_seed_generator::get_nebula_seed(&env, nebula_id)
+    }
+
+    /// Get instrument preset by ID.
+    pub fn get_preset(env: Env, preset_id: u32) -> Result<InstrumentParams, AudioError> {
+        audio_seed_generator::get_preset(&env, preset_id)
+    }
+
+    // ─── Nebula Navigation Route Planner (Issue #69) ──────────────────────────
+
+    /// Initialise the nebula navigation graph with an admin address.
+    pub fn initialize_nav_graph(env: Env, admin: Address) -> Result<(), NavError> {
+        navigation_planner::initialize_nav_graph(&env, &admin)
+    }
+
+    /// Register a directed edge (connection) between two nebulae.
+    pub fn add_nebula_connection(
+        env: Env,
+        admin: Address,
+        from: u64,
+        to: u64,
+        fuel_cost: u32,
+        hazard_level: u32,
+    ) -> Result<(), NavError> {
+        navigation_planner::add_nebula_connection(&env, &admin, from, to, fuel_cost, hazard_level)
+    }
+
+    /// Add up to MAX_CONNECTIONS_PER_BATCH edges in a single transaction.
+    pub fn add_nebula_connections_batch(
+        env: Env,
+        admin: Address,
+        edges: Vec<RouteEdge>,
+    ) -> Result<u32, NavError> {
+        navigation_planner::add_nebula_connections_batch(&env, &admin, edges)
+    }
+
+    /// Dijkstra shortest-fuel-cost route between two nebulae (≤ 12 hops).
+    /// Emits RouteCalculated event on success.
+    pub fn calculate_optimal_route(
+        env: Env,
+        start: u64,
+        dest: u64,
+    ) -> Result<NavPath, NavError> {
+        navigation_planner::calculate_optimal_route(&env, start, dest)
+    }
+
+    /// Validate a caller-supplied route Vec and return its aggregate risk score.
+    pub fn validate_route_safety(env: Env, route: Vec<u64>) -> Result<u32, NavError> {
+        navigation_planner::validate_route_safety(&env, route)
+    }
+
+    /// Return the adjacency list (outgoing edges) for a nebula.
+    pub fn get_neighbors(env: Env, nebula_id: u64) -> Vec<RouteEdge> {
+        navigation_planner::get_neighbors(&env, nebula_id)
+    }
+
+    /// Return the single directed edge from `from` to `to`, if it exists.
+    pub fn get_nav_connection(env: Env, from: u64, to: u64) -> Option<RouteEdge> {
+        navigation_planner::get_connection(&env, from, to)
     }
 }

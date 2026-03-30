@@ -1,5 +1,5 @@
 use crate::ship_nft::{DataKey as ShipDataKey, ShipNft};
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Env};
 
 const BASE_RECHARGE_RATE: u32 = 100;
 const MAX_ENERGY: u32 = 10000;

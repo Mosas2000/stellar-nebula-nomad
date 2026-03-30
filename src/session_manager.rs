@@ -1,4 +1,4 @@
-use soroban_sdk::{contracttype, contracterror, symbol_short, Address, Env, Vec};
+use soroban_sdk::{contracttype, contracterror, symbol_short, Address, Env};
 
 /// Session time-to-live: 24 hours in seconds.
 pub const SESSION_TTL: u64 = 86_400;
