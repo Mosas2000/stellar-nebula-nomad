@@ -42,6 +42,8 @@ mod shared_lib;
 mod fractional_resources;
 mod yield_forecast;
 
+mod gas_sponsor;
+
 mod storage_optim;
 mod state_snapshot;
 
@@ -135,6 +137,12 @@ pub use audit_logger::{AuditEntry, AuditLoggerError, get_audit_count, log_audit_
 pub use sustainability_metrics::{claim_sustainability_reward, get_footprint, record_transaction_footprint, FootprintRecord, SustainabilityError};
 pub use anomaly_classifier::{classify_anomaly, classify_batch, get_classification, refine_classification, AnomalyError, ClassificationRecord};
 pub use shared_lib::{calculate_yield, validate_address, SharedError};
+pub use gas_sponsor::{
+    initialize as initialize_sponsorship, sponsor_first_scan, claim_sponsorship_fund,
+    has_been_sponsored, get_fund_balance, get_daily_count, get_remaining_daily_slots,
+    get_admin, get_config, update_config, mark_profile_verified,
+    MAX_DAILY_SPONSORSHIPS, SponsorConfig, SponsorError,
+};
 
 pub use fractional_resources::{
     initialize as initialize_fractional, fractionalize_resource, merge_fractions,
