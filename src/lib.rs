@@ -39,6 +39,7 @@ mod audit_logger;
 mod sustainability_metrics;
 mod anomaly_classifier;
 mod shared_lib;
+mod yield_forecast;
 
 mod storage_optim;
 mod state_snapshot;
@@ -133,6 +134,14 @@ pub use audit_logger::{AuditEntry, AuditLoggerError, get_audit_count, log_audit_
 pub use sustainability_metrics::{claim_sustainability_reward, get_footprint, record_transaction_footprint, FootprintRecord, SustainabilityError};
 pub use anomaly_classifier::{classify_anomaly, classify_batch, get_classification, refine_classification, AnomalyError, ClassificationRecord};
 pub use shared_lib::{calculate_yield, validate_address, SharedError};
+
+pub use yield_forecast::{
+    initialize as initialize_forecast, generate_yield_forecast, update_forecast_model,
+    batch_generate_forecasts, get_cached_forecast, get_player_history, get_history_count,
+    get_model_params, get_model_version, update_model_params, clear_stale_forecasts,
+    YieldDataPoint, YieldForecast, ModelParams, ForecastError,
+    MAX_HISTORY_POINTS, MAX_FORECAST_DAYS, MAX_FORECAST_BURST,
+};
 
 pub use storage_optim::{
     store_with_bump, get_optimized_entry, batch_store_with_bump, guard_reentrancy,
@@ -1282,6 +1291,73 @@ impl NebulaNomadContract {
         entanglement_comms::get_message_count(&env, pair_id)
     }
 
+    // ─── Yield Forecasting API (Issue #90) ─────────────────────────────────
+
+    /// Initialize the yield forecasting system.
+    pub fn initialize_forecast(env: Env, admin: Address) -> Result<(), ForecastError> {
+        yield_forecast::initialize(&env, &admin)
+    }
+
+    /// Generate a yield forecast for a player.
+    pub fn generate_yield_forecast(
+        env: Env,
+        player: Address,
+        days: u32,
+    ) -> Result<YieldForecast, ForecastError> {
+        yield_forecast::generate_yield_forecast(&env, &player, days)
+    }
+
+    /// Update the forecast model with new data.
+    pub fn update_forecast_model(
+        env: Env,
+        player: Address,
+        data_point: YieldDataPoint,
+    ) -> Result<ModelParams, ForecastError> {
+        yield_forecast::update_forecast_model(&env, &player, data_point)
+    }
+
+    /// Batch generate forecasts for multiple players.
+    pub fn batch_generate_forecasts(
+        env: Env,
+        players: Vec<(Address, u32)>,
+    ) -> Vec<Result<YieldForecast, ForecastError>> {
+        yield_forecast::batch_generate_forecasts(&env, players)
+    }
+
+    /// Get cached forecast for a player.
+    pub fn get_cached_forecast(env: Env, player: Address) -> Option<YieldForecast> {
+        yield_forecast::get_cached_forecast(&env, &player)
+    }
+
+    /// Get historical data for a player.
+    pub fn get_player_history(env: Env, player: Address) -> Vec<YieldDataPoint> {
+        yield_forecast::get_player_history(&env, &player)
+    }
+
+    /// Get number of historical data points for a player.
+    pub fn get_history_count(env: Env, player: Address) -> u32 {
+        yield_forecast::get_history_count(&env, &player)
+    }
+
+    /// Get current model parameters.
+    pub fn get_model_params(env: Env) -> Option<ModelParams> {
+        yield_forecast::get_model_params(&env)
+    }
+
+    /// Get current model version.
+    pub fn get_model_version(env: Env) -> u32 {
+        yield_forecast::get_model_version(&env)
+    }
+
+    /// Update model parameters (admin only).
+    pub fn update_model_params(
+        env: Env,
+        admin: Address,
+        moving_average_window: u32,
+        trend_weight: u32,
+        volatility_adjustment: u32,
+    ) -> Result<ModelParams, ForecastError> {
+        yield_forecast::update_model_params(&env, &admin, moving_average_window, trend_weight, volatility_adjustment)
     // ─── Inter-Nebula Wormhole Travel System (Issue #77) ─────────────────────
 
     /// Open a new wormhole between two nebulae with verifiable travel link.
