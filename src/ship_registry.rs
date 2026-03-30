@@ -10,4 +10,3 @@ pub struct Ship {
     pub level: u32,
     pub scan_range: u32,
 }
-

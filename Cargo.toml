@@ -9,11 +9,18 @@ repository = "https://github.com/yourusername/stellar-nebula-nomad"
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# Enable advanced fuzz / property-based testing helpers.
+# Usage: cargo test --features fuzz
+fuzz = ["soroban-sdk/testutils"]
+
 [dependencies]
 soroban-sdk = "22.0"
+arrayvec = { version = "0.7", default-features = false }
 
 [dev-dependencies]
 soroban-sdk = { version = "22.0", features = ["testutils"] }
+proptest = "1.6"
 
 [profile.release]
 opt-level = "z"

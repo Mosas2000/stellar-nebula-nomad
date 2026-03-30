@@ -202,6 +202,41 @@ graph TB
     Ledger --> Stellar["Stellar Mainnet / Futurenet"]
 ```
 
+### Nebula Generation Engine — Data Flow
+
+```mermaid
+flowchart TD
+    A([Player dApp]) -->|generate_nebula_layout\ncaller, ship_id, region_id, seed| B[NebulaGen Contract]
+
+    B --> C{Seed valid?}
+    C -- "No (all-zero)" --> E1([Err: InvalidSeed])
+    C -- Yes --> D[Mix seed with ledger state]
+
+    D --> D1["master =\nsplitmix64(seed)\n^ splitmix64(ledger_seq)\n^ splitmix64(timestamp)\n^ splitmix64(ship_id)\n^ splitmix64(region_id)"]
+
+    D1 --> F[Generate N anomalies\nfor i in 0..default_size]
+
+    F --> G["Anomaly i:\n• x  = derive(master, i, salt_x) % 1000\n• y  = derive(master, i, salt_y) % 1000\n• rarity = derive(master, i, salt_r) % 101\n• type   = derive(master, i, salt_t) % 5"]
+
+    G --> H[Classify resource_class\nfrom rarity score]
+    H --> H1["0-33  → Sparse\n34-66 → Moderate\n67-100 → Abundant"]
+
+    H1 --> I[Build layout_hash\nBytesN-32 from master]
+
+    I --> J[(Persistent Storage\nActiveLayout ship_id)]
+    I --> K[/"Emit NebulaGenerated\n(ship_id, layout_hash, size)"/]
+    I --> L([Return NebulaLayout])
+
+    M([Resource Minter]) -->|has_anomaly\nship_id, anomaly_index| J
+    J -->|true / false| M
+
+    style B fill:#1a1a2e,color:#e0e0ff
+    style D1 fill:#16213e,color:#e0e0ff
+    style G fill:#16213e,color:#e0e0ff
+    style J fill:#0f3460,color:#e0e0ff
+    style K fill:#533483,color:#fff
+```
+
 ### Module Breakdown
 
 ```

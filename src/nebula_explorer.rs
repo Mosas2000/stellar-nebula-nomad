@@ -70,8 +70,14 @@ fn compute_combined_hash(env: &Env, seed: &BytesN<32>) -> BytesN<32> {
     let mut input = Bytes::new(env);
     let seed_bytes: Bytes = seed.clone().into();
     input.append(&seed_bytes);
-    input.append(&Bytes::from_slice(env, &env.ledger().sequence().to_be_bytes()));
-    input.append(&Bytes::from_slice(env, &env.ledger().timestamp().to_be_bytes()));
+    input.append(&Bytes::from_slice(
+        env,
+        &env.ledger().sequence().to_be_bytes(),
+    ));
+    input.append(&Bytes::from_slice(
+        env,
+        &env.ledger().timestamp().to_be_bytes(),
+    ));
     env.crypto().sha256(&input).into()
 }
 
@@ -82,13 +88,17 @@ fn seed_from_hash(_env: &Env, hash: &BytesN<32>) -> u64 {
     for i in 0..8u32 {
         val = (val << 8) | (bytes.get(i).unwrap_or(0) as u64);
     }
-    if val == 0 { 1 } else { val }
+    if val == 0 {
+        1
+    } else {
+        val
+    }
 }
 
 /// Map a random u64 value to a CellType with weighted distribution.
 fn cell_type_from_val(val: u64) -> CellType {
     match val % 100 {
-        0..=29 => CellType::Empty,        // 30%
+        0..=29 => CellType::Empty,         // 30%
         30..=44 => CellType::Star,         // 15%
         45..=59 => CellType::Asteroid,     // 15%
         60..=74 => CellType::GasCloud,     // 15%
@@ -200,15 +210,9 @@ pub fn compute_layout_hash(env: &Env, layout: &NebulaLayout) -> BytesN<32> {
 }
 
 /// Emit the NebulaScanned event with player address, layout hash, and rarity.
-pub fn emit_nebula_scanned(
-    env: &Env,
-    player: &Address,
-    layout_hash: &BytesN<32>,
-    rarity: &Rarity,
-) {
+pub fn emit_nebula_scanned(env: &Env, player: &Address, layout_hash: &BytesN<32>, rarity: &Rarity) {
     env.events().publish(
         (symbol_short!("nebula"), symbol_short!("scanned")),
         (player.clone(), layout_hash.clone(), rarity.clone()),
     );
 }
-
