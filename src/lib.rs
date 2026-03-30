@@ -1,5 +1,13 @@
 #![no_std]
 
+use soroban_sdk::{contract, contractimpl, Address, BytesN, Env, Vec};
+
+mod analytics;
+mod nebula_explorer;
+pub mod resource_minter;
+mod ship_registry;
+
+pub use analytics::{AnalyticsError, GlobalStats, LeaderboardEntry};
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, String, Symbol, Vec, symbol_short};
 
 mod blueprint_factory;
@@ -18,6 +26,9 @@ mod difficulty_scaler;
 mod emergency_controls;
 mod metadata_resolver;
 mod randomness_oracle;
+pub mod ship_upgrade;
+#[cfg(any(test, feature = "fuzz"))]
+pub mod test_helpers;
 mod treasure_vault;
 
 mod yield_farming;
@@ -38,6 +49,10 @@ mod audit_logger;
 mod sustainability_metrics;
 mod anomaly_classifier;
 mod shared_lib;
+mod fractional_resources;
+mod yield_forecast;
+
+mod gas_sponsor;
 
 mod storage_optim;
 mod state_snapshot;
@@ -51,11 +66,13 @@ mod alliance_manager;
 mod market_oracle;
 mod audio_seed_generator;
 mod privacy_stats;
+mod navigation_planner;
 
 pub use nebula_explorer::{
     calculate_rarity_tier, compute_layout_hash, generate_nebula_layout, CellType, NebulaCell,
     NebulaLayout, Rarity, GRID_SIZE, TOTAL_CELLS,
 };
+pub use resource_minter::{ResourceError, ResourceType, StakeRecord, Config, LEDGERS_PER_DAY};
 pub use resource_minter::{
     auto_list_on_dex, harvest_resources, AssetId, DexOffer, HarvestError, HarvestResult,
     HarvestedResource, Resource, ResourceKey,
@@ -87,6 +104,8 @@ pub use metadata_resolver::{
 pub use randomness_oracle::{
     get_entropy_pool, request_random_seed, verify_and_fallback, OracleError,
 };
+pub use mobile_views::{get_mobile_dashboard, get_quick_scan_preview, MobileDashboard, MobileViewError, QuickScanPreview};
+pub use ship_upgrade::{ShipState, ShipUpgradeError, UpgradeBlueprint};
 pub use treasure_vault::{
     claim_treasure, deposit_treasure, get_vault, TreasureVault, VaultError,
     DEFAULT_MIN_LOCK_DURATION,
@@ -130,6 +149,26 @@ pub use audit_logger::{AuditEntry, AuditLoggerError, get_audit_count, log_audit_
 pub use sustainability_metrics::{claim_sustainability_reward, get_footprint, record_transaction_footprint, FootprintRecord, SustainabilityError};
 pub use anomaly_classifier::{classify_anomaly, classify_batch, get_classification, refine_classification, AnomalyError, ClassificationRecord};
 pub use shared_lib::{calculate_yield, validate_address, SharedError};
+pub use gas_sponsor::{
+    initialize as initialize_sponsorship, sponsor_first_scan, claim_sponsorship_fund,
+    has_been_sponsored, get_fund_balance, get_daily_count, get_remaining_daily_slots,
+    get_admin, get_config, update_config, mark_profile_verified,
+    MAX_DAILY_SPONSORSHIPS, SponsorConfig, SponsorError,
+};
+
+pub use fractional_resources::{
+    initialize as initialize_fractional, fractionalize_resource, merge_fractions,
+    transfer_share, get_share, get_owner_shares, get_total_shares,
+    get_original_resource, is_share_owner, update_config as update_fractional_config,
+    FractionalShare, OriginalResource, FractionalConfig,
+    FractionalError, MAX_FRACTIONS_PER_TX, MIN_SHARE_SIZE,
+pub use yield_forecast::{
+    initialize as initialize_forecast, generate_yield_forecast, update_forecast_model,
+    batch_generate_forecasts, get_cached_forecast, get_player_history, get_history_count,
+    get_model_params, get_model_version, update_model_params, clear_stale_forecasts,
+    YieldDataPoint, YieldForecast, ModelParams, ForecastError,
+    MAX_HISTORY_POINTS, MAX_FORECAST_DAYS, MAX_FORECAST_BURST,
+};
 
 pub use storage_optim::{
     store_with_bump, get_optimized_entry, batch_store_with_bump, guard_reentrancy,
@@ -189,6 +228,10 @@ pub use privacy_stats::{
     opt_in_privacy, commit_private_stat, verify_private_stat, get_commitment,
     get_commitment_count, batch_commit_stats, is_opted_in, reset_burst_counter as reset_privacy_burst,
     StatCommitment, PrivacyError, MAX_COMMITMENTS_PER_TX,
+pub use navigation_planner::{
+    initialize_nav_graph, add_nebula_connection, add_nebula_connections_batch,
+    calculate_optimal_route, validate_route_safety, get_neighbors, get_connection,
+    NavError, NavPath, RouteEdge, NavConfig, MAX_ROUTE_HOPS, MAX_CONNECTIONS_PER_BATCH,
 };
 
 #[contract]
@@ -207,6 +250,16 @@ impl NebulaNomadContract {
         nebula_explorer::calculate_rarity_tier(&env, &layout)
     }
 
+    /// Full scan: generates layout, calculates rarity, and emits a
+    /// `NebulaScanned` event containing the layout hash.
+    ///
+    /// Also updates the on-chain analytics counters (total_scans,
+    /// total_essence_accrued) and registers the player for the leaderboard.
+    pub fn scan_nebula(
+        env: Env,
+        seed: BytesN<32>,
+        player: Address,
+    ) -> (NebulaLayout, Rarity) {
     /// Full scan: generates layout, calculates rarity, emits NebulaScanned event.
     pub fn scan_nebula(env: Env, seed: BytesN<32>, player: Address) -> (NebulaLayout, Rarity) {
         player.require_auth();
@@ -214,6 +267,32 @@ impl NebulaNomadContract {
         let rarity = nebula_explorer::calculate_rarity_tier(&env, &layout);
         let layout_hash = nebula_explorer::compute_layout_hash(&env, &layout);
         nebula_explorer::emit_nebula_scanned(&env, &player, &layout_hash, &rarity);
+
+        // Record analytics: use total_energy as the essence earned this scan.
+        analytics::record_scan(&env, &player, layout.total_energy as u64);
+
+        (layout, rarity)
+    }
+
+    /// Return aggregate global statistics (total scans, ships minted, etc.).
+    ///
+    /// Pure view — no ledger writes, zero gas cost beyond the read.
+    pub fn get_global_stats(env: Env) -> GlobalStats {
+        analytics::get_global_stats(&env)
+    }
+
+    /// Return the top-`top_n` explorers sorted by cumulative cosmic essence.
+    ///
+    /// Emits a `LeaderboardSnapshot` event so frontends can subscribe via
+    /// Stellar event streams.  Returns `Err(InvalidTopN)` when `top_n` is 0
+    /// or exceeds 50.
+    pub fn snapshot_leaderboard(
+        env: Env,
+        top_n: u32,
+    ) -> Result<Vec<LeaderboardEntry>, AnalyticsError> {
+        analytics::snapshot_leaderboard(&env, top_n)
+    }
+}
         (layout, rarity)
     }
 
@@ -469,6 +548,7 @@ impl NebulaNomadContract {
         randomness_oracle::get_entropy_pool(&env)
     }
 
+    // ─── Player Profile ───────────────────────────────────────────────────────
     // ─── Player Profile ───────────────────────────────────────────────────
 
     /// Create a new on-chain player profile.
@@ -587,6 +667,41 @@ impl NebulaNomadContract {
         referral_system::get_referral(&env, new_nomad)
     }
 
+    // ─── Ship Upgrade (Issue #7) ─────────────────────────────────────────
+
+    /// Initialise the upgrade config with a blueprint map. Admin-only, once.
+    pub fn init_upgrade_config(
+        env: Env,
+        admin: Address,
+        blueprints: soroban_sdk::Map<Symbol, UpgradeBlueprint>,
+    ) -> Result<(), ShipUpgradeError> {
+        ship_upgrade::init_upgrade_config(&env, &admin, blueprints)
+    }
+
+    /// Apply a single component upgrade to a ship, burning the required
+    /// resource from the player's harvested balance.
+    pub fn apply_upgrade(
+        env: Env,
+        player: Address,
+        ship_id: u64,
+        component: Symbol,
+    ) -> Result<ShipState, ShipUpgradeError> {
+        ship_upgrade::apply_upgrade(&env, &player, ship_id, component)
+    }
+
+    /// Apply up to 2 upgrades in a single transaction.
+    pub fn batch_upgrade(
+        env: Env,
+        player: Address,
+        ship_id: u64,
+        components: Vec<Symbol>,
+    ) -> Result<Vec<ShipState>, ShipUpgradeError> {
+        ship_upgrade::batch_upgrade(&env, &player, ship_id, components)
+    }
+
+    /// Read the current upgrade state of a ship.
+    pub fn get_ship_state(env: Env, ship_id: u64) -> Option<ShipState> {
+        ship_upgrade::get_ship_state(&env, ship_id)
     // ─── Cross-Player Resource Gifting (#27) ──────────────────────────────
 
     /// Send a resource gift to another player.
@@ -1279,6 +1394,143 @@ impl NebulaNomadContract {
         entanglement_comms::get_message_count(&env, pair_id)
     }
 
+    // ─── Fractional Resource Ownership API (Issue #89) ────────────────────
+
+    /// Initialize the fractional resource system.
+    pub fn initialize_fractional(env: Env, admin: Address) -> Result<(), FractionalError> {
+        fractional_resources::initialize(&env, &admin)
+    }
+
+    /// Fractionalize a resource into divisible shares.
+    pub fn fractionalize_resource(
+        env: Env,
+        owner: Address,
+        resource_type: Symbol,
+        total_amount: u32,
+        shares: u32,
+    ) -> Result<Vec<u64>, FractionalError> {
+        fractional_resources::fractionalize_resource(&env, &owner, resource_type, total_amount, shares)
+    }
+
+    /// Merge fractional shares back into a whole resource.
+    pub fn merge_fractions(
+        env: Env,
+        owner: Address,
+        share_ids: Vec<u64>,
+    ) -> Result<u32, FractionalError> {
+        fractional_resources::merge_fractions(&env, &owner, share_ids)
+    }
+
+    /// Transfer a fractional share to another owner.
+    pub fn transfer_share(
+        env: Env,
+        from: Address,
+        to: Address,
+        share_id: u64,
+    ) -> Result<FractionalShare, FractionalError> {
+        fractional_resources::transfer_share(&env, &from, &to, share_id)
+    }
+
+    /// Get a fractional share by ID.
+    pub fn get_share(env: Env, share_id: u64) -> Option<FractionalShare> {
+        fractional_resources::get_share(&env, share_id)
+    }
+
+    /// Get all share IDs owned by an address.
+    pub fn get_owner_shares(env: Env, owner: Address) -> Vec<u64> {
+        fractional_resources::get_owner_shares(&env, &owner)
+    }
+
+    /// Get the total number of shares created.
+    pub fn get_total_shares(env: Env) -> u64 {
+        fractional_resources::get_total_shares(&env)
+    }
+
+    /// Get original resource data.
+    pub fn get_original_resource(env: Env, resource_type: Symbol) -> Option<OriginalResource> {
+        fractional_resources::get_original_resource(&env, resource_type)
+    }
+
+    /// Check if an address owns a specific share.
+    pub fn is_share_owner(env: Env, owner: Address, share_id: u64) -> bool {
+        fractional_resources::is_share_owner(&env, &owner, share_id)
+    }
+
+    /// Update fractionalization config (admin only).
+    pub fn update_fractional_config(
+        env: Env,
+        admin: Address,
+        min_share_size: u32,
+        max_fractions: u32,
+    ) -> Result<FractionalConfig, FractionalError> {
+        fractional_resources::update_config(&env, &admin, min_share_size, max_fractions)
+    // ─── Yield Forecasting API (Issue #90) ─────────────────────────────────
+
+    /// Initialize the yield forecasting system.
+    pub fn initialize_forecast(env: Env, admin: Address) -> Result<(), ForecastError> {
+        yield_forecast::initialize(&env, &admin)
+    }
+
+    /// Generate a yield forecast for a player.
+    pub fn generate_yield_forecast(
+        env: Env,
+        player: Address,
+        days: u32,
+    ) -> Result<YieldForecast, ForecastError> {
+        yield_forecast::generate_yield_forecast(&env, &player, days)
+    }
+
+    /// Update the forecast model with new data.
+    pub fn update_forecast_model(
+        env: Env,
+        player: Address,
+        data_point: YieldDataPoint,
+    ) -> Result<ModelParams, ForecastError> {
+        yield_forecast::update_forecast_model(&env, &player, data_point)
+    }
+
+    /// Batch generate forecasts for multiple players.
+    pub fn batch_generate_forecasts(
+        env: Env,
+        players: Vec<(Address, u32)>,
+    ) -> Vec<Result<YieldForecast, ForecastError>> {
+        yield_forecast::batch_generate_forecasts(&env, players)
+    }
+
+    /// Get cached forecast for a player.
+    pub fn get_cached_forecast(env: Env, player: Address) -> Option<YieldForecast> {
+        yield_forecast::get_cached_forecast(&env, &player)
+    }
+
+    /// Get historical data for a player.
+    pub fn get_player_history(env: Env, player: Address) -> Vec<YieldDataPoint> {
+        yield_forecast::get_player_history(&env, &player)
+    }
+
+    /// Get number of historical data points for a player.
+    pub fn get_history_count(env: Env, player: Address) -> u32 {
+        yield_forecast::get_history_count(&env, &player)
+    }
+
+    /// Get current model parameters.
+    pub fn get_model_params(env: Env) -> Option<ModelParams> {
+        yield_forecast::get_model_params(&env)
+    }
+
+    /// Get current model version.
+    pub fn get_model_version(env: Env) -> u32 {
+        yield_forecast::get_model_version(&env)
+    }
+
+    /// Update model parameters (admin only).
+    pub fn update_model_params(
+        env: Env,
+        admin: Address,
+        moving_average_window: u32,
+        trend_weight: u32,
+        volatility_adjustment: u32,
+    ) -> Result<ModelParams, ForecastError> {
+        yield_forecast::update_model_params(&env, &admin, moving_average_window, trend_weight, volatility_adjustment)
     // ─── Inter-Nebula Wormhole Travel System (Issue #77) ─────────────────────
 
     /// Open a new wormhole between two nebulae with verifiable travel link.
@@ -1571,5 +1823,56 @@ impl NebulaNomadContract {
     /// Reset privacy burst counter for a new transaction.
     pub fn reset_privacy_burst_counter(env: Env) {
         privacy_stats::reset_burst_counter(&env)
+    // ─── Nebula Navigation Route Planner (Issue #69) ──────────────────────────
+
+    /// Initialise the nebula navigation graph with an admin address.
+    pub fn initialize_nav_graph(env: Env, admin: Address) -> Result<(), NavError> {
+        navigation_planner::initialize_nav_graph(&env, &admin)
+    }
+
+    /// Register a directed edge (connection) between two nebulae.
+    pub fn add_nebula_connection(
+        env: Env,
+        admin: Address,
+        from: u64,
+        to: u64,
+        fuel_cost: u32,
+        hazard_level: u32,
+    ) -> Result<(), NavError> {
+        navigation_planner::add_nebula_connection(&env, &admin, from, to, fuel_cost, hazard_level)
+    }
+
+    /// Add up to MAX_CONNECTIONS_PER_BATCH edges in a single transaction.
+    pub fn add_nebula_connections_batch(
+        env: Env,
+        admin: Address,
+        edges: Vec<RouteEdge>,
+    ) -> Result<u32, NavError> {
+        navigation_planner::add_nebula_connections_batch(&env, &admin, edges)
+    }
+
+    /// Dijkstra shortest-fuel-cost route between two nebulae (≤ 12 hops).
+    /// Emits RouteCalculated event on success.
+    pub fn calculate_optimal_route(
+        env: Env,
+        start: u64,
+        dest: u64,
+    ) -> Result<NavPath, NavError> {
+        navigation_planner::calculate_optimal_route(&env, start, dest)
+    }
+
+    /// Validate a caller-supplied route Vec and return its aggregate risk score.
+    pub fn validate_route_safety(env: Env, route: Vec<u64>) -> Result<u32, NavError> {
+        navigation_planner::validate_route_safety(&env, route)
+    }
+
+    /// Return the adjacency list (outgoing edges) for a nebula.
+    pub fn get_neighbors(env: Env, nebula_id: u64) -> Vec<RouteEdge> {
+        navigation_planner::get_neighbors(&env, nebula_id)
+    }
+
+    /// Return the single directed edge from `from` to `to`, if it exists.
+    pub fn get_nav_connection(env: Env, from: u64, to: u64) -> Option<RouteEdge> {
+        navigation_planner::get_connection(&env, from, to)
     }
 }

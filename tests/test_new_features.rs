@@ -214,38 +214,38 @@ fn test_audit_and_sustainability_and_anomaly_and_shared_lib() {
 
     // Audit logging
     let details = BytesN::from_array(&env, &[1u8; 128]);
-    let entry = client.log_audit_event(Some(player.clone()), symbol_short!("test_act"), details).unwrap();
+    let entry = client.log_audit_event(&Some(player.clone()), &symbol_short!("test_act"), &details);
     assert_eq!(entry.id, 0);
     assert_eq!(client.get_audit_count(), 1);
 
-    let audits = client.query_audit_logs(symbol_short!("test_act"), 10);
+    let audits = client.query_audit_logs(&symbol_short!("test_act"), &10);
     assert_eq!(audits.len(), 1);
     assert_eq!(audits.get(0).unwrap().action, symbol_short!("test_act"));
 
     // Sustainability: low footprint gets reward
-    client.record_transaction_footprint(player.clone(), 5000);
-    let footprint = client.get_footprint(player.clone());
+    client.record_transaction_footprint(&player, &5000);
+    let footprint = client.get_footprint(&player);
     assert_eq!(footprint.gas_used, 5000);
-    let reward = client.claim_sustainability_reward(player.clone());
+    let reward = client.claim_sustainability_reward(&player);
     assert_eq!(reward, 50);
 
-    // Sustainability: once claimed, no reward should panic (unwrapped error path)
-    assert!(std::panic::catch_unwind(|| client.claim_sustainability_reward(player.clone())).is_err());
+    // Sustainability: once claimed, contract should return an error
+    assert!(client.try_claim_sustainability_reward(&player).is_err());
 
     // Anomaly classification
-    let classification = client.classify_anomaly(1, Vec::from_array(&env, [120u32, 5u32, 10u32]));
+    let classification = client.classify_anomaly(&1, &Vec::from_array(&env, [120u32, 5u32, 10u32]));
     assert_eq!(classification.anomaly_type, symbol_short!("wormhole"));
 
     // refine
-    let refined = client.refine_classification(1, Vec::from_array(&env, [200u32]));
+    let refined = client.refine_classification(&1, &Vec::from_array(&env, [200u32]));
     assert!(refined.confidence <= 100);
 
     let loaded = client.get_classification(&1).unwrap();
     assert_eq!(loaded.anomaly_id, 1);
 
     // shared lib operations
-    assert!(client.validate_address(&player).is_ok());
+    client.validate_address(&player);
 
-    let calc = client.calculate_yield(&100, &3).unwrap();
+    let calc = client.calculate_yield(&100, &3);
     assert_eq!(calc, 300);
 }

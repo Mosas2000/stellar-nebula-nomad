@@ -5,38 +5,17 @@
   },
   "auth": [
     [],
-    [
-      [
-        "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-        {
-          "function": {
-            "contract_fn": {
-              "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "scan_nebula",
-              "args": [
-                {
-                  "bytes": "4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d"
-                },
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                }
-              ]
-            }
-          },
-          "sub_invocations": []
-        }
-      ]
-    ]
+    []
   ],
   "ledger": {
     "protocol_version": 22,
-    "sequence_number": 100,
-    "timestamp": 1700000000,
+    "sequence_number": 0,
+    "timestamp": 0,
     "network_id": "0000000000000000000000000000000000000000000000000000000000000000",
-    "base_reserve": 10,
-    "min_persistent_entry_ttl": 1000,
-    "min_temp_entry_ttl": 100,
-    "max_entry_ttl": 10000,
+    "base_reserve": 0,
+    "min_persistent_entry_ttl": 4096,
+    "min_temp_entry_ttl": 16,
+    "max_entry_ttl": 6312000,
     "ledger_entries": [
       [
         {
@@ -82,7 +61,7 @@
                         "symbol": "total_essence_accrued"
                       },
                       "val": {
-                        "u64": 4460
+                        "u64": 30
                       }
                     },
                     {
@@ -90,7 +69,7 @@
                         "symbol": "total_scans"
                       },
                       "val": {
-                        "u64": 1
+                        "u64": 3
                       }
                     }
                   ]
@@ -99,7 +78,7 @@
             },
             "ext": "v0"
           },
-          1099
+          4095
         ]
       ],
       [
@@ -138,13 +117,13 @@
                 },
                 "durability": "persistent",
                 "val": {
-                  "u64": 4460
+                  "u64": 30
                 }
               }
             },
             "ext": "v0"
           },
-          1099
+          4095
         ]
       ],
       [
@@ -187,7 +166,7 @@
             },
             "ext": "v0"
           },
-          1099
+          4095
         ]
       ],
       [
@@ -219,40 +198,7 @@
             },
             "ext": "v0"
           },
-          1099
-        ]
-      ],
-      [
-        {
-          "contract_data": {
-            "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-            "key": {
-              "ledger_key_nonce": {
-                "nonce": 801925984706572462
-              }
-            },
-            "durability": "temporary"
-          }
-        },
-        [
-          {
-            "last_modified_ledger_seq": 0,
-            "data": {
-              "contract_data": {
-                "ext": "v0",
-                "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4",
-                "key": {
-                  "ledger_key_nonce": {
-                    "nonce": 801925984706572462
-                  }
-                },
-                "durability": "temporary",
-                "val": "void"
-              }
-            },
-            "ext": "v0"
-          },
-          10099
+          4095
         ]
       ],
       [
@@ -273,48 +219,10 @@
             },
             "ext": "v0"
           },
-          1099
+          4095
         ]
       ]
     ]
   },
-  "events": [
-    {
-      "event": {
-        "ext": "v0",
-        "contract_id": "0000000000000000000000000000000000000000000000000000000000000001",
-        "type_": "contract",
-        "body": {
-          "v0": {
-            "topics": [
-              {
-                "symbol": "nebula"
-              },
-              {
-                "symbol": "scanned"
-              }
-            ],
-            "data": {
-              "vec": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "bytes": "fe1f3b9170f6c7627eef56ec07d1dd61f63bd221730deb5ead7b8677da2586dc"
-                },
-                {
-                  "vec": [
-                    {
-                      "symbol": "Legendary"
-                    }
-                  ]
-                }
-              ]
-            }
-          }
-        }
-      },
-      "failed_call": false
-    }
-  ]
+  "events": []
 }
