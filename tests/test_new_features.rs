@@ -229,8 +229,8 @@ fn test_audit_and_sustainability_and_anomaly_and_shared_lib() {
     let reward = client.claim_sustainability_reward(&player);
     assert_eq!(reward, 50);
 
-    // Sustainability: once claimed, no reward should panic (unwrapped error path)
-    assert!(std::panic::catch_unwind(|| client.claim_sustainability_reward(&player.clone())).is_err());
+    // Sustainability: once claimed, contract should return an error
+    assert!(client.try_claim_sustainability_reward(&player).is_err());
 
     // Anomaly classification
     let classification = client.classify_anomaly(&1, &Vec::from_array(&env, [120u32, 5u32, 10u32]));
