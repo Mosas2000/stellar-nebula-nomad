@@ -1,0 +1,1141 @@
+   Compiling stellar-nebula-nomad v0.1.0 (/home/solodev/Documents/dripsNetwork/stellar-nebula-nomad)
+error: symbol too long: length 10, max 9
+   --> src/metrics_exporter.rs:161:50
+    |
+161 |         (symbol_short!("metrics"), symbol_short!("tx_success")),
+    |                                                  ^^^^^^^^^^^^
+
+error: symbol too long: length 10, max 9
+   --> src/metrics_exporter.rs:192:50
+    |
+192 |         (symbol_short!("metrics"), symbol_short!("tx_failure")),
+    |                                                  ^^^^^^^^^^^^
+
+error: symbol too long: length 11, max 9
+   --> src/metrics_exporter.rs:353:43
+    |
+353 |         anomalies.push_back(symbol_short!("error_spike"));
+    |                                           ^^^^^^^^^^^^^
+
+error: symbol too long: length 12, max 9
+   --> src/migration_framework.rs:255:52
+    |
+255 |         (symbol_short!("migration"), symbol_short!("incompatible")),
+    |                                                    ^^^^^^^^^^^^^^
+
+error: symbol too long: length 15, max 9
+   --> src/migration_framework.rs:299:52
+    |
+299 |         (symbol_short!("migration"), symbol_short!("batch_completed")),
+    |                                                    ^^^^^^^^^^^^^^^^^
+
+error: symbol too long: length 11, max 9
+   --> src/migration_framework.rs:336:52
+    |
+336 |         (symbol_short!("migration"), symbol_short!("rolled_back")),
+    |                                                    ^^^^^^^^^^^^^
+
+error: symbol too long: length 11, max 9
+   --> src/cache_ttl_manager.rs:227:48
+    |
+227 |         (symbol_short!("cache"), symbol_short!("invalidated")),
+    |                                                ^^^^^^^^^^^^^
+
+error: symbol too long: length 21, max 9
+   --> src/cache_ttl_manager.rs:243:48
+    |
+243 |         (symbol_short!("cache"), symbol_short!("namespace_invalidated")),
+    |                                                ^^^^^^^^^^^^^^^^^^^^^^^
+
+error: symbol too long: length 10, max 9
+   --> src/cache_ttl_manager.rs:292:48
+    |
+292 |         (symbol_short!("cache"), symbol_short!("configured")),
+    |                                                ^^^^^^^^^^^^
+
+error[E0432]: unresolved import `soroban_sdk::i128`
+ --> src/metrics_exporter.rs:2:80
+  |
+2 | ... Env, Symbol, Vec, Map, i128,
+  |                            ^^^^ no `i128` in the root
+  |
+  = help: consider importing one of these items instead:
+          core::i128
+          core::primitive::i128
+
+error[E0432]: unresolved imports `crate::resource_minter::AssetId`, `crate::resource_minter::ResourceKey`
+ --> src/gifting_system.rs:1:30
+  |
+1 | use crate::resource_minter::{AssetId, ResourceKey};
+  |                              ^^^^^^^  ^^^^^^^^^^^ no `ResourceKey` in `resource_minter`
+  |                              |
+  |                              no `AssetId` in `resource_minter`
+
+error[E0432]: unresolved import `crate::rate_limiter`
+  --> src/resource_minter.rs:15:12
+   |
+15 | use crate::rate_limiter::{check_rate_limit, Operation, RateLimitError};
+   |            ^^^^^^^^^^^^ could not find `rate_limiter` in the crate root
+
+error[E0432]: unresolved import `crate::nebula_gen`
+  --> src/resource_minter.rs:16:12
+   |
+16 | use crate::nebula_gen::{NebulaGenContract, NebulaGenError};
+   |            ^^^^^^^^^^ could not find `nebula_gen` in the crate root
+
+error[E0432]: unresolved imports `crate::resource_minter::harvest_resources`, `crate::resource_minter::DexOffer`, `crate::resource_minter::HarvestError`, `crate::resource_minter::HarvestResult`
+ --> src/dex_integration.rs:1:30
+  |
+1 | ...nter::{harvest_resources, DexOffer, HarvestError, HarvestResult};
+  |           ^^^^^^^^^^^^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^ no `HarvestResult` in `resource_minter`
+  |           |                  |         |
+  |           |                  |         no `HarvestError` in `resource_minter`
+  |           |                  no `DexOffer` in `resource_minter`
+  |           no `harvest_resources` in `resource_minter`
+
+error[E0432]: unresolved import `crate::resource_minter::ResourceKey`
+ --> src/ship_upgrade.rs:1:5
+  |
+1 | use crate::resource_minter::ResourceKey;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `ResourceKey` in `resource_minter`
+
+error[E0432]: unresolved imports `resource_minter::ResourceError`, `resource_minter::StakeRecord`, `resource_minter::Config`, `resource_minter::LEDGERS_PER_DAY`
+   --> src/lib.rs:114:27
+    |
+114 | ...::{ResourceError, ResourceType, StakeRecord, Config, LEDGERS_PER_DAY};
+    |       ^^^^^^^^^^^^^                ^^^^^^^^^^^  ^^^^^^  ^^^^^^^^^^^^^^^ no `LEDGERS_PER_DAY` in `resource_minter`
+    |       |                            |            |
+    |       |                            |            no `Config` in `resource_minter`
+    |       |                            no `StakeRecord` in `resource_minter`
+    |       no `ResourceError` in `resource_minter`
+    |       help: a similar name exists in the module: `ResourceRecord`
+    |
+    = help: consider importing one of these variants instead:
+            crate::difficulty_curve::CurveKey::Config
+            crate::gas_recovery::RefundKey::Config
+            crate::gas_sponsor::DataKey::Config
+            crate::navigation_planner::NavKey::Config
+            soroban_sdk::xdr::LedgerUpgrade::Config
+            soroban_sdk::xdr::LedgerUpgradeType::Config
+note: variant `crate::ship_upgrade::UpgradeDataKey::Config` exists but is inaccessible
+   --> src/ship_upgrade.rs:73:5
+    |
+ 73 |     Config,
+    |     ^^^^^^ not accessible
+
+error[E0432]: unresolved imports `resource_minter::auto_list_on_dex`, `resource_minter::harvest_resources`, `resource_minter::AssetId`, `resource_minter::DexOffer`, `resource_minter::HarvestError`, `resource_minter::HarvestResult`, `resource_minter::HarvestedResource`, `resource_minter::ResourceKey`
+   --> src/lib.rs:116:5
+    |
+116 |     auto_list_on_dex, harvest_resources, AssetId, DexOffer, HarvestError, HarvestResult,
+    |     ^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^  ^^^^^^^  ^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^^ no `HarvestResult` in `resource_minter`
+    |     |                 |                  |        |         |
+    |     |                 |                  |        |         no `HarvestError` in `resource_minter`
+    |     |                 |                  |        no `DexOffer` in `resource_minter`
+    |     |                 |                  no `AssetId` in `resource_minter`
+    |     |                 no `harvest_resources` in `resource_minter`
+    |     no `auto_list_on_dex` in `resource_minter`
+117 |     HarvestedResource, ResourceKey,
+    |     ^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^ no `ResourceKey` in `resource_minter`
+    |     |
+    |     no `HarvestedResource` in `resource_minter`
+
+error[E0425]: cannot find type `String` in this scope
+  --> src/metadata_resolver.rs:47:14
+   |
+47 |     pub cid: String,
+   |              ^^^^^^ not found in this scope
+   |
+help: consider importing one of these structs
+   |
+ 1 + use crate::String;
+   |
+ 1 + use soroban_sdk::String;
+   |
+
+error[E0425]: cannot find type `String` in this scope
+  --> src/metadata_resolver.rs:53:25
+   |
+53 |     pub status_message: String,
+   |                         ^^^^^^ not found in this scope
+   |
+help: consider importing one of these structs
+   |
+ 1 + use crate::String;
+   |
+ 1 + use soroban_sdk::String;
+   |
+
+error[E0425]: cannot find type `Address` in this scope
+   --> src/energy_manager.rs:254:43
+    |
+254 | pub fn set_regen_rate(env: &Env, caller: &Address, rate: u32) {
+    |                                           ^^^^^^^ not found in this scope
+    |
+help: consider importing one of these structs
+    |
+  1 + use crate::Address;
+    |
+  1 + use soroban_sdk::Address;
+    |
+
+error[E0425]: cannot find type `LeaderboardEntry` in this scope
+   --> src/lib.rs:403:21
+    |
+403 |     ) -> Result<Vec<LeaderboardEntry>, AnalyticsError> {
+    |                     ^^^^^^^^^^^^^^^^
+    |
+   ::: src/leaderboards.rs:14:1
+    |
+ 14 | pub enum LeaderboardError {
+    | ------------------------- similarly named enum `LeaderboardError` defined here
+    |
+help: an enum with a similar name exists
+    |
+403 -     ) -> Result<Vec<LeaderboardEntry>, AnalyticsError> {
+403 +     ) -> Result<Vec<LeaderboardError>, AnalyticsError> {
+    |
+help: consider importing one of these structs
+    |
+  3 + use crate::analytics::LeaderboardEntry;
+    |
+  3 + use crate::leaderboards::LeaderboardEntry;
+    |
+  3 + use crate::rewards::LeaderboardEntry;
+    |
+
+error[E0425]: cannot find type `AccessControlError` in this scope
+   --> src/lib.rs:897:62
+    |
+897 | ... -> Result<(), AccessControlError> {
+    |                   ^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  3 + use crate::access_control::AccessControlError;
+    |
+
+error[E0425]: cannot find type `AccessControlError` in this scope
+   --> src/lib.rs:902:117
+    |
+902 | ... -> Result<(), AccessControlError> {
+    |                   ^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  3 + use crate::access_control::AccessControlError;
+    |
+
+error[E0425]: cannot find type `AccessControlError` in this scope
+   --> src/lib.rs:907:129
+    |
+907 | ... -> Result<(), AccessControlError> {
+    |                   ^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  3 + use crate::access_control::AccessControlError;
+    |
+
+error[E0425]: cannot find type `AccessControlError` in this scope
+   --> src/lib.rs:912:97
+    |
+912 | ... -> Result<(), AccessControlError> {
+    |                   ^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  3 + use crate::access_control::AccessControlError;
+    |
+
+error[E0425]: cannot find type `AccessControlError` in this scope
+   --> src/lib.rs:917:100
+    |
+917 | ... -> Result<(), AccessControlError> {
+    |                   ^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  3 + use crate::access_control::AccessControlError;
+    |
+
+error[E0425]: cannot find type `AccessControlError` in this scope
+   --> src/lib.rs:922:101
+    |
+922 | ... -> Result<(), AccessControlError> {
+    |                   ^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  3 + use crate::access_control::AccessControlError;
+    |
+
+error[E0425]: cannot find type `AccessControlError` in this scope
+   --> src/lib.rs:927:88
+    |
+927 | ... -> Result<(), AccessControlError> {
+    |                   ^^^^^^^^^^^^^^^^^^ not found in this scope
+    |
+help: consider importing this enum
+    |
+  3 + use crate::access_control::AccessControlError;
+    |
+
+error[E0425]: cannot find function `harvest_resources` in module `resource_minter`
+    --> src/lib.rs:1098:26
+     |
+1098 |         resource_minter::harvest_resources(&env, ship_id, &layout)
+     |                          ^^^^^^^^^^^^^^^^^ not found in `resource_minter`
+
+error[E0425]: cannot find function `auto_list_on_dex` in module `resource_minter`
+    --> src/lib.rs:1107:26
+     |
+1107 |         resource_minter::auto_list_on_dex(&env, &resource, min_price)
+     |                          ^^^^^^^^^^^^^^^^ not found in `resource_minter`
+
+warning: unused import: `soroban_sdk::storage::Instance`
+  --> src/access_control.rs:76:5
+   |
+76 | use soroban_sdk::storage::Instance;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused imports: `String` and `log`
+  --> src/resource_minter.rs:13:20
+   |
+13 |                    log, symbol_short, Address, Env, String};
+   |                    ^^^                              ^^^^^^
+
+warning: unused import: `Map`
+ --> src/content_tools.rs:1:97
+  |
+1 | ... Address, Env, String, Vec, Symbol, Map, Bytes};
+  |                                        ^^^
+
+warning: unused imports: `BytesN`, `Map`, and `String`
+ --> src/pvp_combat.rs:1:76
+  |
+1 | ...short, Address, Env, String, Vec, Symbol, Map, BytesN};
+  |                         ^^^^^^               ^^^  ^^^^^^
+
+warning: unused import: `Vec`
+ --> src/difficulty_curve.rs:1:84
+  |
+1 | ...symbol_short, Address, Env, Symbol, Vec};
+  |                                        ^^^
+
+warning: unused import: `Symbol`
+ --> src/achievement_engine.rs:1:84
+  |
+1 | ...mbol_short, Address, Env, String, Symbol, Vec};
+  |                                      ^^^^^^
+
+warning: unused imports: `Symbol` and `Vec`
+ --> src/yield_farming.rs:1:76
+  |
+1 | ...pe, symbol_short, Address, Env, Symbol, Vec};
+  |                                    ^^^^^^  ^^^
+
+warning: unused imports: `Bytes` and `Vec`
+ --> src/governance.rs:1:71
+  |
+1 | ...l_short, Address, Bytes, BytesN, Env, String, Symbol, Vec};
+  |                      ^^^^^                               ^^^
+
+warning: unused import: `String`
+ --> src/theme_customizer.rs:1:76
+  |
+1 | ...type, symbol_short, Address, Env, String, Symbol, Vec};
+  |                                      ^^^^^^
+
+warning: unused import: `Vec`
+ --> src/indexer_callbacks.rs:1:92
+  |
+1 | ...hort, Address, BytesN, Env, Symbol, Vec};
+  |                                        ^^^
+
+warning: unused import: `Map`
+ --> src/contract_versioning.rs:2:74
+  |
+2 |     contracterror, contracttype, symbol_short, Address, Bytes, Env, Vec, Map,
+  |                                                                          ^^^
+
+warning: unused import: `Map`
+ --> src/gas_recovery.rs:2:75
+  |
+2 |     contracterror, contracttype, symbol_short, Address, BytesN, Env, Vec, Map,
+  |                                                                           ^^^
+
+warning: unused imports: `Map` and `Vec`
+ --> src/bounty_board.rs:2:70
+  |
+2 | ...bol_short, Address, BytesN, Env, Vec, Map, String,
+  |                                     ^^^  ^^^
+
+warning: unused imports: `Map` and `vec`
+ --> src/recycling_crafter.rs:2:48
+  |
+2 |     contracterror, contracttype, symbol_short, vec, Address, Env, Vec, Map, Sy...
+  |                                                ^^^                     ^^^
+
+warning: unused import: `Vec`
+ --> src/environment_simulator.rs:1:75
+  |
+1 | use soroban_sdk::{contracterror, contracttype, symbol_short, Env, Symbol, Vec};
+  |                                                                           ^^^
+
+warning: unused imports: `BytesN` and `Vec`
+ --> src/sustainability_metrics.rs:1:76
+  |
+1 | ...pe, symbol_short, Address, Env, Vec, BytesN};
+  |                                    ^^^  ^^^^^^
+
+warning: unused import: `Address`
+ --> src/anomaly_classifier.rs:1:62
+  |
+1 | use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Sym...
+  |                                                              ^^^^^^^
+
+warning: unused import: `contracttype`
+ --> src/shared_lib.rs:1:34
+  |
+1 | use soroban_sdk::{contracterror, contracttype, Address, Env};
+  |                                  ^^^^^^^^^^^^
+
+warning: unused import: `BytesN`
+ --> src/fractional_resources.rs:1:71
+  |
+1 | ...tracttype, symbol_short, Address, BytesN, Env, Symbol, Vec};
+  |                                      ^^^^^^
+
+warning: unused import: `BytesN`
+ --> src/yield_forecast.rs:1:71
+  |
+1 | ...tracttype, symbol_short, Address, BytesN, Env, Symbol, Vec};
+  |                                      ^^^^^^
+
+warning: unused import: `Map`
+ --> src/trading.rs:8:89
+  |
+8 | ...l_short, Address, Env, Symbol, Vec, Map};
+  |                                        ^^^
+
+warning: unused import: `Vec`
+ --> src/battle_pass.rs:1:76
+  |
+1 | use soroban_sdk::{contracttype, contracterror, symbol_short, Address, Env, Vec};
+  |                                                                            ^^^
+
+warning: unused import: `Bytes`
+ --> src/skins.rs:3:47
+  |
+3 | use soroban_sdk::{contracttype, symbol_short, Bytes, Env, Symbol, Vec};
+  |                                               ^^^^^
+
+warning: unused import: `ShipSkin`
+ --> src/skins.rs:4:45
+  |
+4 | use crate::ship_customization::{SkinRarity, ShipSkin};
+  |                                             ^^^^^^^^
+
+warning: unused import: `Symbol`
+ --> src/notifications/alerts.rs:1:47
+  |
+1 | use soroban_sdk::{symbol_short, Address, Env, Symbol};
+  |                                               ^^^^^^
+
+warning: unused imports: `Address` and `Map`
+ --> src/gas_optimized_storage.rs:3:24
+  |
+3 | use soroban_sdk::{Env, Address, Symbol, Vec, Map};
+  |                        ^^^^^^^               ^^^
+
+warning: unused import: `BytesN`
+ --> src/gas_optimized_compute.rs:3:29
+  |
+3 | use soroban_sdk::{Env, Vec, BytesN};
+  |                             ^^^^^^
+
+error[E0119]: conflicting implementations of trait `TryFrom<soroban_sdk::Error>` for type `MinterError`
+  --> src/resource_minter.rs:43:1
+   |
+43 | #[contracterror]
+   | ^^^^^^^^^^^^^^^^
+   |
+   = note: conflicting implementation in crate `core`:
+           - impl<T, U> TryFrom<U> for T
+             where U: Into<T>;
+   = note: this error originates in the attribute macro `contracterror` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `TryFrom<&soroban_sdk::Error>` for type `MinterError`
+  --> src/resource_minter.rs:43:1
+   |
+43 | #[contracterror]
+   | ^^^^^^^^^^^^^^^^
+   |
+   = note: conflicting implementation in crate `core`:
+           - impl<T, U> TryFrom<U> for T
+             where U: Into<T>;
+   = note: this error originates in the attribute macro `contracterror` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `TryFrom<InvokeError>` for type `MinterError`
+  --> src/resource_minter.rs:43:1
+   |
+43 | #[contracterror]
+   | ^^^^^^^^^^^^^^^^
+   |
+   = note: conflicting implementation in crate `core`:
+           - impl<T, U> TryFrom<U> for T
+             where U: Into<T>;
+   = note: this error originates in the attribute macro `contracterror` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0119]: conflicting implementations of trait `TryFrom<&InvokeError>` for type `MinterError`
+  --> src/resource_minter.rs:43:1
+   |
+43 | #[contracterror]
+   | ^^^^^^^^^^^^^^^^
+   |
+   = note: conflicting implementation in crate `core`:
+           - impl<T, U> TryFrom<U> for T
+             where U: Into<T>;
+   = note: this error originates in the attribute macro `contracterror` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+warning: the `#![no_std]` attribute can only be used at the crate root
+  --> src/resource_minter.rs:11:1
+   |
+11 | #![no_std]
+   | ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_attributes)]` (part of `#[warn(unused)]`) on by default
+
+error[E0308]: mismatched types
+   --> src/access_control.rs:481:25
+    |
+481 |     if grantees.len() > BATCH_GRANT_LIMIT {
+    |        --------------   ^^^^^^^^^^^^^^^^^ expected `u32`, found `usize`
+    |        |
+    |        expected because this is `u32`
+    |
+help: you can convert a `usize` to a `u32` and panic if the converted value doesn't fit
+    |
+481 |     if grantees.len() > BATCH_GRANT_LIMIT.try_into().unwrap() {
+    |                                          ++++++++++++++++++++
+
+error[E0599]: no method named `to_string` found for struct `soroban_sdk::Symbol` in the current scope
+   --> src/pvp_combat.rs:611:30
+    |
+611 |     let move_str = move_type.to_string();
+    |                              ^^^^^^^^^ method not found in `soroban_sdk::Symbol`
+    |
+   --> /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/alloc/src/string.rs:2882:7
+    |
+    = note: the method is available for `soroban_sdk::Symbol` here
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `ToString` which provides `to_string` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use crate::leaderboards::std::string::ToString;
+    |
+
+error[E0599]: no method named `to_string` found for reference `&soroban_sdk::Symbol` in the current scope
+   --> src/state_snapshot.rs:669:33
+    |
+669 |     let uri_bytes = storage_uri.to_string();
+    |                                 ^^^^^^^^^ method not found in `&soroban_sdk::Symbol`
+    |
+    = help: items from traits can only be used if the trait is in scope
+help: trait `ToString` which provides `to_string` is implemented but not in scope; perhaps you want to import it
+    |
+  1 + use crate::leaderboards::std::string::ToString;
+    |
+
+error[E0277]: the trait bound `Val: TryFromVal<Env, &&Address>` is not satisfied
+   --> src/metrics_exporter.rs:126:9
+    |
+124 |     env.events().publish(
+    |                  ------- required by a bound introduced by this call
+125 |         (symbol_short!("metrics"), symbol_short!("init")),
+126 |         (&admin, env.ledger().timestamp()),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+    = help: the trait `TryFromVal<Env, &&soroban_sdk::Address>` is not implemented for `soroban_sdk::Val`
+    = help: the following other types implement trait `TryFromVal<E, V>`:
+              `soroban_sdk::Val` implements `TryFromVal<E, &()>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6, T7)>`
+            and 490 others
+    = note: required for `&&soroban_sdk::Address` to implement `TryIntoVal<Env, soroban_sdk::Val>`
+    = note: required for `soroban_sdk::Val` to implement `TryFromVal<Env, (&&soroban_sdk::Address, u64)>`
+    = note: required for `soroban_sdk::Val` to implement `FromVal<Env, (&&soroban_sdk::Address, u64)>`
+    = note: required for `(&&soroban_sdk::Address, u64)` to implement `IntoVal<Env, soroban_sdk::Val>`
+note: required by a bound in `soroban_sdk::events::Events::publish`
+   --> /home/solodev/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.11/src/events.rs:91:12
+    |
+ 88 |     pub fn publish<T, D>(&self, topics: T, data: D)
+    |            ------- required by a bound in this associated function
+...
+ 91 |         D: IntoVal<Env, Val>,
+    |            ^^^^^^^^^^^^^^^^^ required by this bound in `Events::publish`
+    = note: the full name for the type has been written to '/home/solodev/Documents/dripsNetwork/stellar-nebula-nomad/target/debug/deps/stellar_nebula_nomad.long-type-7409050339180572839.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0308]: mismatched types
+   --> src/metrics_exporter.rs:187:47
+    |
+187 |         .and_then(|m: Map<Symbol, u64>| m.get(&error_type))
+    |                                           --- ^^^^^^^^^^^ expected `Symbol`, found `&Symbol`
+    |                                           |
+    |                                           arguments to this method are incorrect
+    |
+note: method defined here
+   --> /home/solodev/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.11/src/map.rs:345:12
+    |
+345 |     pub fn get(&self, k: K) -> Option<V> {
+    |            ^^^
+help: consider removing the borrow
+    |
+187 -         .and_then(|m: Map<Symbol, u64>| m.get(&error_type))
+187 +         .and_then(|m: Map<Symbol, u64>| m.get(error_type))
+    |
+
+error[E0277]: the trait bound `Val: TryFromVal<Env, &&Address>` is not satisfied
+   --> src/metrics_exporter.rs:381:9
+    |
+379 |     env.events().publish(
+    |                  ------- required by a bound introduced by this call
+380 |         (symbol_short!("metrics"), symbol_short!("reset")),
+381 |         (&admin, env.ledger().timestamp()),
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+    = help: the trait `TryFromVal<Env, &&soroban_sdk::Address>` is not implemented for `soroban_sdk::Val`
+    = help: the following other types implement trait `TryFromVal<E, V>`:
+              `soroban_sdk::Val` implements `TryFromVal<E, &()>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6)>`
+              `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6, T7)>`
+            and 490 others
+    = note: required for `&&soroban_sdk::Address` to implement `TryIntoVal<Env, soroban_sdk::Val>`
+    = note: required for `soroban_sdk::Val` to implement `TryFromVal<Env, (&&soroban_sdk::Address, u64)>`
+    = note: required for `soroban_sdk::Val` to implement `FromVal<Env, (&&soroban_sdk::Address, u64)>`
+    = note: required for `(&&soroban_sdk::Address, u64)` to implement `IntoVal<Env, soroban_sdk::Val>`
+note: required by a bound in `soroban_sdk::events::Events::publish`
+   --> /home/solodev/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-sdk-22.0.11/src/events.rs:91:12
+    |
+ 88 |     pub fn publish<T, D>(&self, topics: T, data: D)
+    |            ------- required by a bound in this associated function
+...
+ 91 |         D: IntoVal<Env, Val>,
+    |            ^^^^^^^^^^^^^^^^^ required by this bound in `Events::publish`
+    = note: the full name for the type has been written to '/home/solodev/Documents/dripsNetwork/stellar-nebula-nomad/target/debug/deps/stellar_nebula_nomad.long-type-10979131619318662333.txt'
+    = note: consider using `--verbose` to print the full type name to the console
+
+error[E0277]: the trait bound `u8: TryFromVal<Env, soroban_sdk::Val>` is not satisfied
+  --> src/cache_ttl_manager.rs:69:1
+   |
+69 | #[contracttype]
+   | ^^^^^^^^^^^^^^^ the trait `TryFromVal<Env, soroban_sdk::Val>` is not implemented for `u8`
+   |
+   = help: the following other types implement trait `TryFromVal<E, V>`:
+             `i128` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i128` implements `TryFromVal<Env, i128>`
+             `i32` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i32` implements `TryFromVal<Env, i32>`
+             `i64` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i64` implements `TryFromVal<Env, i64>`
+             `u128` implements `TryFromVal<E, soroban_sdk::Val>`
+             `u128` implements `TryFromVal<Env, u128>`
+           and 7 others
+   = note: required for `soroban_sdk::Vec<u8>` to implement `TryFromVal<Env, soroban_sdk::Val>`
+   = note: required for `soroban_sdk::Val` to implement `TryIntoVal<Env, soroban_sdk::Vec<u8>>`
+   = note: this error originates in the attribute macro `contracttype` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `soroban_sdk::Val: TryFromVal<Env, u8>` is not satisfied
+  --> src/cache_ttl_manager.rs:69:1
+   |
+69 | #[contracttype]
+   | ^^^^^^^^^^^^^^^ the trait `TryFromVal<Env, u8>` is not implemented for `soroban_sdk::Val`
+   |
+   = help: the following other types implement trait `TryFromVal<E, V>`:
+             `soroban_sdk::Val` implements `TryFromVal<E, &()>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6, T7)>`
+           and 490 others
+   = note: required for `soroban_sdk::Val` to implement `FromVal<Env, u8>`
+   = note: required for `u8` to implement `IntoVal<Env, soroban_sdk::Val>`
+   = note: required for `soroban_sdk::Vec<u8>` to implement `TryFromVal<Env, soroban_sdk::Val>`
+   = note: required for `soroban_sdk::Val` to implement `TryIntoVal<Env, soroban_sdk::Vec<u8>>`
+   = note: the full name for the type has been written to '/home/solodev/Documents/dripsNetwork/stellar-nebula-nomad/target/debug/deps/stellar_nebula_nomad.long-type-11651570379918892381.txt'
+   = note: consider using `--verbose` to print the full type name to the console
+   = note: this error originates in the attribute macro `contracttype` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0277]: the trait bound `u8: TryFromVal<Env, soroban_sdk::Val>` is not satisfied
+  --> src/cache_ttl_manager.rs:73:5
+   |
+68 | #[derive(Clone, Debug, PartialEq, Eq)]
+   |                 ----- in this derive macro expansion
+...
+73 |     pub value: Vec<u8>,
+   |     ^^^^^^^^^^^^^^^^^^ the trait `TryFromVal<Env, soroban_sdk::Val>` is not implemented for `u8`
+   |
+   = help: the following other types implement trait `TryFromVal<E, V>`:
+             `i128` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i128` implements `TryFromVal<Env, i128>`
+             `i32` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i32` implements `TryFromVal<Env, i32>`
+             `i64` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i64` implements `TryFromVal<Env, i64>`
+             `u128` implements `TryFromVal<E, soroban_sdk::Val>`
+             `u128` implements `TryFromVal<Env, u128>`
+           and 7 others
+   = note: required for `soroban_sdk::Vec<u8>` to implement `Debug`
+   = note: required for the cast from `&soroban_sdk::Vec<u8>` to `&dyn Debug`
+
+error[E0277]: the trait bound `soroban_sdk::Val: TryFromVal<Env, u8>` is not satisfied
+  --> src/cache_ttl_manager.rs:73:5
+   |
+68 | #[derive(Clone, Debug, PartialEq, Eq)]
+   |                 ----- in this derive macro expansion
+...
+73 |     pub value: Vec<u8>,
+   |     ^^^^^^^^^^^^^^^^^^ the trait `TryFromVal<Env, u8>` is not implemented for `soroban_sdk::Val`
+   |
+   = help: the following other types implement trait `TryFromVal<E, V>`:
+             `soroban_sdk::Val` implements `TryFromVal<E, &()>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6, T7)>`
+           and 490 others
+   = note: required for `soroban_sdk::Val` to implement `FromVal<Env, u8>`
+   = note: required for `u8` to implement `IntoVal<Env, soroban_sdk::Val>`
+   = note: required for `soroban_sdk::Vec<u8>` to implement `Debug`
+   = note: required for the cast from `&soroban_sdk::Vec<u8>` to `&dyn Debug`
+   = note: the full name for the type has been written to '/home/solodev/Documents/dripsNetwork/stellar-nebula-nomad/target/debug/deps/stellar_nebula_nomad.long-type-11651570379918892381.txt'
+   = note: consider using `--verbose` to print the full type name to the console
+
+error[E0369]: binary operation `==` cannot be applied to type `soroban_sdk::Vec<u8>`
+   --> src/cache_ttl_manager.rs:73:5
+    |
+ 68 | #[derive(Clone, Debug, PartialEq, Eq)]
+    |                        --------- in this derive macro expansion
+...
+ 73 |     pub value: Vec<u8>,
+    |     ^^^^^^^^^^^^^^^^^^
+    |
+note: `soroban_sdk::Val` does not implement `TryFromVal<Env, u8>`
+   --> /home/solodev/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/soroban-env-common-22.1.3/src/val.rs:249:1
+    |
+249 | pub struct Val(u64);
+    | ^^^^^^^^^^^^^^ `soroban_sdk::Val` is defined in another crate
+
+error[E0277]: the trait bound `u8: TryFromVal<Env, soroban_sdk::Val>` is not satisfied
+  --> src/cache_ttl_manager.rs:73:5
+   |
+68 | #[derive(Clone, Debug, PartialEq, Eq)]
+   |                                   -- in this derive macro expansion
+...
+73 |     pub value: Vec<u8>,
+   |     ^^^^^^^^^^^^^^^^^^ the trait `TryFromVal<Env, soroban_sdk::Val>` is not implemented for `u8`
+   |
+   = help: the following other types implement trait `TryFromVal<E, V>`:
+             `i128` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i128` implements `TryFromVal<Env, i128>`
+             `i32` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i32` implements `TryFromVal<Env, i32>`
+             `i64` implements `TryFromVal<E, soroban_sdk::Val>`
+             `i64` implements `TryFromVal<Env, i64>`
+             `u128` implements `TryFromVal<E, soroban_sdk::Val>`
+             `u128` implements `TryFromVal<Env, u128>`
+           and 7 others
+   = note: required for `soroban_sdk::Vec<u8>` to implement `core::cmp::Eq`
+note: required by a bound in `AssertParamIsEq`
+  --> /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/cmp.rs:371:0
+
+error[E0277]: the trait bound `soroban_sdk::Val: TryFromVal<Env, u8>` is not satisfied
+  --> src/cache_ttl_manager.rs:73:5
+   |
+68 | #[derive(Clone, Debug, PartialEq, Eq)]
+   |                                   -- in this derive macro expansion
+...
+73 |     pub value: Vec<u8>,
+   |     ^^^^^^^^^^^^^^^^^^ the trait `TryFromVal<Env, u8>` is not implemented for `soroban_sdk::Val`
+   |
+   = help: the following other types implement trait `TryFromVal<E, V>`:
+             `soroban_sdk::Val` implements `TryFromVal<E, &()>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6)>`
+             `soroban_sdk::Val` implements `TryFromVal<E, &(T0, T1, T2, T3, T4, T5, T6, T7)>`
+           and 490 others
+   = note: required for `soroban_sdk::Val` to implement `FromVal<Env, u8>`
+   = note: required for `u8` to implement `IntoVal<Env, soroban_sdk::Val>`
+   = note: required for `soroban_sdk::Vec<u8>` to implement `core::cmp::Eq`
+note: required by a bound in `AssertParamIsEq`
+  --> /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/cmp.rs:371:0
+   = note: the full name for the type has been written to '/home/solodev/Documents/dripsNetwork/stellar-nebula-nomad/target/debug/deps/stellar_nebula_nomad.long-type-11651570379918892381.txt'
+   = note: consider using `--verbose` to print the full type name to the console
+
+warning: unused variable: `env`
+   --> src/access_control.rs:758:5
+    |
+758 |     env: &Env,
+    |     ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `role`
+   --> src/access_control.rs:760:5
+    |
+760 |     role: Symbol,
+    |     ^^^^ help: if this is intentional, prefix it with an underscore: `_role`
+
+warning: unused variable: `grantee`
+   --> src/access_control.rs:761:5
+    |
+761 |     grantee: Address,
+    |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_grantee`
+
+warning: unused variable: `action_type`
+   --> src/access_control.rs:762:5
+    |
+762 |     action_type: Symbol,
+    |     ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_action_type`
+
+warning: unused variable: `config`
+   --> src/access_control.rs:917:9
+    |
+917 |     let config: MultiSigConfig = env
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `env`
+   --> src/leaderboards.rs:671:28
+    |
+671 | fn sort_entries_descending(env: &Env, entries: &mut Vec<LeaderboardEntry>) {
+    |                            ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> src/leaderboards.rs:687:34
+    |
+687 | fn sort_guild_entries_descending(env: &Env, entries: &mut Vec<GuildEntry>) {
+    |                                  ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> src/leaderboards.rs:703:37
+    |
+703 | ...egional_entries_descending(env: &Env, entries: &mut Vec<RegionalEntry>) {
+    |                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> src/leaderboards.rs:719:40
+    |
+719 | ...evement_entries_descending(env: &Env, entries: &mut Vec<AchievementEntry>) {
+    |                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: variable does not need to be mutable
+   --> src/content_tools.rs:322:9
+    |
+322 |     let mut creator_contents: Vec<u64> = env
+    |         ----^^^^^^^^^^^^^^^^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+error[E0507]: cannot move out of `*caller` which is behind a shared reference
+   --> src/content_tools.rs:372:22
+    |
+372 |         (content_id, *caller),
+    |                      ^^^^^^^ move occurs because `*caller` has type `soroban_sdk::Address`, which does not implement the `Copy` trait
+    |
+help: consider cloning the value if the performance cost is acceptable
+    |
+372 -         (content_id, *caller),
+372 +         (content_id, caller.clone()),
+    |
+
+error[E0507]: cannot move out of `*caller` which is behind a shared reference
+   --> src/content_tools.rs:392:22
+    |
+392 |         (content_id, *caller),
+    |                      ^^^^^^^ move occurs because `*caller` has type `soroban_sdk::Address`, which does not implement the `Copy` trait
+    |
+help: consider cloning the value if the performance cost is acceptable
+    |
+392 -         (content_id, *caller),
+392 +         (content_id, caller.clone()),
+    |
+
+warning: variable does not need to be mutable
+   --> src/pvp_combat.rs:865:9
+    |
+865 |     let mut queue: Vec<MatchmakingEntry> = env
+    |         ----^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+   --> src/pvp_combat.rs:894:9
+    |
+894 |     let mut queue: Vec<MatchmakingEntry> = env
+    |         ----^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `token_id`
+  --> src/metadata_resolver.rs:97:35
+   |
+97 | ...d_pin_request(cid: &Bytes, token_id: u64, replication_factor: u32) -> Bytes {
+   |                               ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_token_id`
+
+warning: unused variable: `replication_factor`
+  --> src/metadata_resolver.rs:97:50
+   |
+97 | ...&Bytes, token_id: u64, replication_factor: u32) -> Bytes {
+   |                           ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_replication_factor`
+
+warning: variable does not need to be mutable
+  --> src/yield_farming.rs:35:9
+   |
+35 |     let mut pool_id = env.storage().instance().get::<_, u64>(&symbol_short!("...
+   |         ----^^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: variable does not need to be mutable
+  --> src/governance.rs:54:9
+   |
+54 |     let mut proposal_id = env.storage().instance().get::<_, u64>(&symbol_shor...
+   |         ----^^^^^^^^^^^
+   |         |
+   |         help: remove this `mut`
+
+warning: unused variable: `boosted_qty`
+   --> src/recycling_crafter.rs:200:13
+    |
+200 |         let boosted_qty = (base_qty as f32 * efficiency_multiplier) as u32;
+    |             ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_boosted_qty`
+
+warning: unused variable: `last_regen`
+   --> src/energy_manager.rs:163:9
+    |
+163 |     let last_regen: u64 = env.storage().persistent().get(&regen_key).unwrap_...
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_last_regen`
+
+warning: unused variable: `env`
+  --> src/shared_lib.rs:11:25
+   |
+11 | pub fn validate_address(env: &Env, auth: Address) -> Result<(), SharedError> {
+   |                         ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+  --> src/fractional_resources.rs:93:16
+   |
+93 |     pub fn new(env: &Env, admin: &Address) -> Self {
+   |                ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `i`
+   --> src/fractional_resources.rs:191:9
+    |
+191 |     for i in 0..shares {
+    |         ^ help: if this is intentional, prefix it with an underscore: `_i`
+
+warning: unused variable: `original_id`
+   --> src/fractional_resources.rs:297:9
+    |
+297 |     let original_id = expected_original_id.unwrap();
+    |         ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_original_id`
+
+warning: unused variable: `env`
+   --> src/yield_forecast.rs:348:29
+    |
+348 | fn calculate_moving_average(env: &Env, data: &Vec<YieldDataPoint>) -> i128 {
+    |                             ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> src/yield_forecast.rs:364:20
+    |
+364 | fn calculate_trend(env: &Env, data: &Vec<YieldDataPoint>) -> i128 {
+    |                    ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> src/yield_forecast.rs:478:5
+    |
+478 |     env: &Env,
+    |     ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+error[E0382]: borrow of moved value: `storage_uri`
+   --> src/state_snapshot.rs:571:32
+    |
+537 |     storage_uri: Symbol,
+    |     ----------- move occurs because `storage_uri` has type `soroban_sdk::Symbol`, which does not implement the `Copy` trait
+...
+561 |         storage_uri,
+    |         ----------- value moved here
+...
+571 |         (export_id, backup_id, storage_uri.clone(), now),
+    |                                ^^^^^^^^^^^ value borrowed here after move
+    |
+help: consider cloning the value if the performance cost is acceptable
+    |
+561 |         storage_uri: storage_uri.clone(),
+    |                    +++++++++++++++++++++
+
+warning: unused variable: `backup`
+   --> src/state_snapshot.rs:542:9
+    |
+542 |     let backup: AutomatedBackup = env
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_backup`
+
+warning: unused variable: `backup`
+   --> src/state_snapshot.rs:596:9
+    |
+596 |     let backup: AutomatedBackup = env
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_backup`
+
+warning: unused variable: `record`
+   --> src/migration_framework.rs:353:9
+    |
+353 |     let record = MigrationRecord {
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_record`
+
+error[E0382]: borrow of moved value: `namespace`
+   --> src/cache_ttl_manager.rs:128:33
+    |
+104 |     namespace: Symbol,
+    |     --------- move occurs because `namespace` has type `soroban_sdk::Symbol`, which does not implement the `Copy` trait
+...
+124 |         .set(&CacheKey::CacheEntry(namespace, key.clone()), &cached);
+    |                                    --------- value moved here
+...
+128 |         .set(&CacheKey::IsStale(namespace.clone(), key), &false);
+    |                                 ^^^^^^^^^ value borrowed here after move
+    |
+help: consider cloning the value if the performance cost is acceptable
+    |
+124 |         .set(&CacheKey::CacheEntry(namespace.clone(), key.clone()), &cached);
+    |                                             ++++++++
+
+warning: variable does not need to be mutable
+   --> src/cache_ttl_manager.rs:250:9
+    |
+250 |     let mut cleared = 0u32;
+    |         ----^^^^^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `env`
+   --> src/cache_ttl_manager.rs:323:24
+    |
+323 | pub fn get_cache_stats(env: &Env, namespace: Symbol) -> (u32, u32) {
+    |                        ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `namespace`
+   --> src/cache_ttl_manager.rs:323:35
+    |
+323 | pub fn get_cache_stats(env: &Env, namespace: Symbol) -> (u32, u32) {
+    |                                   ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_namespace`
+
+warning: unused variable: `message`
+   --> src/entanglement_comms.rs:156:5
+    |
+156 |     message: &BytesN<64>,
+    |     ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_message`
+
+warning: unused variable: `player`
+  --> src/privacy_stats.rs:61:5
+   |
+61 |     player: &Address,
+   |     ^^^^^^ help: if this is intentional, prefix it with an underscore: `_player`
+
+warning: unused variable: `env`
+  --> src/privacy_stats.rs:94:5
+   |
+94 |     env: &Env,
+   |     ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `address`
+   --> src/rewards.rs:408:42
+    |
+408 | fn generate_code_from_address(env: &Env, address: &Address) -> BytesN<8> {
+    |                                          ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_address`
+
+warning: unused variable: `total_rewards`
+   --> src/rewards.rs:445:5
+    |
+445 |     total_rewards: i128,
+    |     ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_total_rewards`
+
+warning: variable does not need to be mutable
+   --> src/trading.rs:175:9
+    |
+175 |     let mut ids: Vec<u64> = env
+    |         ----^^^
+    |         |
+    |         help: remove this `mut`
+
+warning: unused variable: `notification`
+  --> src/notifications/push_service.rs:12:9
+   |
+12 |     let notification = Notification {
+   |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_notification`
+
+warning: unused variable: `env`
+   --> src/economics/monitor.rs:138:33
+    |
+138 | ...n calculate_inflation_rate(env: &Env, old_supply: i128, new_supply: i128)...
+    |                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+ --> src/gas_optimized_compute.rs:6:22
+  |
+6 | pub fn fast_hash_u64(env: &Env, input: u64) -> u64 {
+  |                      ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+  --> src/composability_examples.rs:49:16
+   |
+49 |     pub fn new(env: &Env, success: bool, data: Bytes, gas_used: u64) -> Self {
+   |                ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+   --> src/composability_examples.rs:297:16
+    |
+297 |     pub fn new(env: &Env) -> Self {
+    |                ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+    --> src/lib.rs:1840:28
+     |
+1840 |     pub fn calculate_yield(env: Env, base: i128, multiplier: u32) -> Result...
+     |                            ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+warning: unused variable: `env`
+    --> src/lib.rs:2322:34
+     |
+2322 | ...b fn calculate_travel_cost(env: Env, origin_nebula: u64, destination: u6...
+     |                               ^^^ help: if this is intentional, prefix it with an underscore: `_env`
+
+Some errors have detailed explanations: E0119, E0277, E0308, E0369, E0382, E0425, E0432, E0507, E0599.
+For more information about an error, try `rustc --explain E0119`.
+warning: `stellar-nebula-nomad` (lib) generated 72 warnings
+error: could not compile `stellar-nebula-nomad` (lib) due to 51 previous errors; 72 warnings emitted

@@ -28,6 +28,8 @@ mod data_exporter;
 mod emergency_controls;
 mod metadata_resolver;
 mod randomness_oracle;
+mod rate_limiter;
+pub mod nebula_gen;
 pub mod ship_upgrade;
 #[cfg(any(test, feature = "fuzz"))]
 pub mod test_helpers;
@@ -107,15 +109,12 @@ mod composability_examples;
 pub use reentrancy_guard::ReentrancyError;
 
 pub use analytics::{AnalyticsError, GlobalStats};
-pub use nebula_explorer::{
-    calculate_rarity_tier, compute_layout_hash, generate_nebula_layout, CellType, NebulaCell,
-    NebulaLayout, Rarity, GRID_SIZE, TOTAL_CELLS,
+pub use access_control::{AccessControlError};
+pub use nebula_gen::{
+    NebulaError as NebulaGenError, Anomaly, AnomalyType, NebulaLayout as NebulaGenLayout,
+    ResourceClass,
 };
-pub use resource_minter::{ResourceError, ResourceType, StakeRecord, Config, LEDGERS_PER_DAY};
-pub use resource_minter::{
-    auto_list_on_dex, harvest_resources, AssetId, DexOffer, HarvestError, HarvestResult,
-    HarvestedResource, ResourceKey,
-};
+pub use resource_minter::{MinterError, ResourceRecord, ResourceType};
 pub use ship_nft::{ShipError, ShipNft};
 pub use blueprint_factory::{Blueprint, BlueprintError, BlueprintRarity};
 pub use referral_system::{Referral, ReferralError};
@@ -127,7 +126,7 @@ pub use onboarding_tutorial::{
     OnboardingError, TOTAL_STEPS, STEP_REWARDS,
 };
 pub use leaderboards::{
-    LeaderboardEntry as EnhancedLeaderboardEntry, GuildEntry, RegionalEntry, AchievementEntry,
+    LeaderboardEntry, LeaderboardEntry as EnhancedLeaderboardEntry, GuildEntry, RegionalEntry, AchievementEntry,
     LeaderboardRewards, LeaderboardError,
     CATEGORY_ESSENCE, CATEGORY_SCANS, CATEGORY_MISSIONS,
     CATEGORY_NEBULAE_EXPLORED, CATEGORY_SHIPS_MINTED, CATEGORY_TRADES,
@@ -1089,23 +1088,25 @@ impl NebulaNomadContract {
         ship_nft::get_metadata(&env, ship_id)
     }
 
-    /// Gas-optimized harvest.
-    pub fn harvest_resources(
-        env: Env,
-        ship_id: u64,
-        layout: NebulaLayout,
-    ) -> Result<HarvestResult, HarvestError> {
-        resource_minter::harvest_resources(&env, ship_id, &layout)
-    }
+    /// DEPRECATED: harvest_resources removed after upstream merge
+    /// Gas-optimized harvest - functionality moved to resource_minter::mint_resource
+    // pub fn harvest_resources(
+    //     env: Env,
+    //     ship_id: u64,
+    //     layout: NebulaLayout,
+    // ) -> Result<HarvestResult, HarvestError> {
+    //     resource_minter::harvest_resources(&env, ship_id, &layout)
+    // }
 
-    /// Create an AMM-listing hook for a harvested resource.
-    pub fn auto_list_on_dex(
-        env: Env,
-        resource: AssetId,
-        min_price: i128,
-    ) -> Result<DexOffer, HarvestError> {
-        resource_minter::auto_list_on_dex(&env, &resource, min_price)
-    }
+    /// DEPRECATED: auto_list_on_dex removed after upstream merge
+    /// Create an AMM-listing hook for a harvested resource - use trading module instead
+    // pub fn auto_list_on_dex(
+    //     env: Env,
+    //     resource: AssetId,
+    //     min_price: i128,
+    // ) -> Result<DexOffer, HarvestError> {
+    //     resource_minter::auto_list_on_dex(&env, &resource, min_price)
+    // }
 
     // ─── DEX Integration (Issue #9) ──────────────────────────────────────
 
