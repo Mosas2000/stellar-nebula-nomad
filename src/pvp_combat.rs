@@ -188,9 +188,14 @@ pub const ELO_DECAY_FLOOR: u32 = 1000;
 
 pub fn set_admin(env: &Env, admin: &Address) {
     admin.require_auth();
+    let old_admin: Option<Address> = env.storage().persistent().get(&PvPDataKey::Admin);
     env.storage()
         .persistent()
         .set(&PvPDataKey::Admin, admin);
+    env.events().publish(
+        (symbol_short!("pvp"), symbol_short!("admin_set")),
+        (old_admin, admin.clone()),
+    );
 }
 
 fn get_admin(env: &Env) -> Option<Address> {
@@ -239,6 +244,10 @@ pub fn get_or_init_stats(env: &Env, player: &Address) -> CombatStats {
 pub fn update_stats(env: &Env, player: &Address, stats: &CombatStats) {
     let key = PvPDataKey::PlayerStats(player.clone());
     env.storage().persistent().set(&key, stats);
+    env.events().publish(
+        (symbol_short!("pvp"), symbol_short!("stats_upd")),
+        (player.clone(), stats.wins, stats.losses, stats.draws),
+    );
 }
 
 pub fn get_combat_stats(env: &Env, player: &Address) -> CombatStats {
@@ -257,7 +266,12 @@ pub fn get_elo_rating(env: &Env, player: &Address) -> u32 {
 
 pub fn update_elo_rating(env: &Env, player: &Address, new_rating: u32) {
     let key = PvPDataKey::EloRating(player.clone());
+    let old_elo = env.storage().persistent().get(&key).unwrap_or(INITIAL_ELO);
     env.storage().persistent().set(&key, &new_rating);
+    env.events().publish(
+        (symbol_short!("pvp"), symbol_short!("elo_upd")),
+        (player.clone(), old_elo, new_rating),
+    );
 }
 
 fn calculate_elo_change(winner_rating: u32, loser_rating: u32) -> (u32, u32) {
@@ -275,9 +289,14 @@ fn calculate_elo_change(winner_rating: u32, loser_rating: u32) -> (u32, u32) {
 /// Track the last active timestamp for a player. Called on any PvP action.
 pub fn update_last_active(env: &Env, player: &Address) {
     let key = PvPDataKey::LastActive(player.clone());
+    let timestamp = env.ledger().timestamp();
     env.storage()
         .persistent()
-        .set(&key, &env.ledger().timestamp());
+        .set(&key, &timestamp);
+    env.events().publish(
+        (symbol_short!("pvp"), symbol_short!("last_act")),
+        (player.clone(), timestamp),
+    );
 }
 
 /// Get the last active timestamp for a player.
@@ -296,6 +315,10 @@ pub fn set_elo_decay_config(
     env.storage()
         .persistent()
         .set(&PvPDataKey::EloDecayConfig, &config);
+    env.events().publish(
+        (symbol_short!("pvp"), symbol_short!("elo_cfg")),
+        (caller.clone(), config.inactivity_secs, config.decay_points, config.floor),
+    );
     Ok(())
 }
 
@@ -484,6 +507,11 @@ pub fn decline_challenge(
 
     challenge.status = symbol_short!("declined");
     env.storage().persistent().set(&key, &challenge);
+
+    env.events().publish(
+        (symbol_short!("pvp"), symbol_short!("decline")),
+        (caller.clone(), challenge_id),
+    );
 
     Ok(())
 }
@@ -886,6 +914,11 @@ pub fn leave_matchmaking(
 
     env.storage().persistent().set(&key, &new_queue);
 
+    env.events().publish(
+        (symbol_short!("pvp"), symbol_short!("mq_leave")),
+        (player.clone(),),
+    );
+
     Ok(())
 }
 
@@ -1009,6 +1042,11 @@ pub fn remove_spectator(
 
     info.spectators = new_spectators;
     env.storage().persistent().set(&spec_key, &info);
+
+    env.events().publish(
+        (symbol_short!("pvp"), symbol_short!("spec_rm")),
+        (spectator.clone(), combat_id),
+    );
 
     Ok(())
 }

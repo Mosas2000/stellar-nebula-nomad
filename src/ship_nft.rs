@@ -382,18 +382,33 @@ pub fn repair_ship(env: &Env, owner: &Address, ship_id: u64) -> Result<ShipNft, 
     let key = DataKey::Ship(ship_id);
     let mut ship: ShipNft = env.storage().persistent().get(&key).ok_or(ShipError::ShipNotFound)?;
     if ship.owner != *owner { return Err(ShipError::NotOwner); }
-    
+
+    let old_durability = ship.durability;
     ship.durability = ship.max_durability;
     env.storage().persistent().set(&key, &ship);
+
+    env.events().publish(
+        (symbol_short!("ship_rep"), ship_id, owner.clone()),
+        old_durability,
+    );
+
     Ok(ship)
 }
 
 pub fn damage_ship(env: &Env, ship_id: u64, amount: u32) -> Result<ShipNft, ShipError> {
     let key = DataKey::Ship(ship_id);
     let mut ship: ShipNft = env.storage().persistent().get(&key).ok_or(ShipError::ShipNotFound)?;
-    
+
+    let old_durability = ship.durability;
     ship.durability = ship.durability.saturating_sub(amount);
     env.storage().persistent().set(&key, &ship);
+
+    env.events().publish(
+        (symbol_short!("ship_dmg"), ship_id, owner.clone()),
+        old_durability,
+        ship.durability,
+    );
+
     Ok(ship)
 }
 
