@@ -158,7 +158,7 @@ pub fn record_tx_success(env: &Env, gas_used: u128) {
         .set(&MetricsKey::LastUpdateTime, &env.ledger().timestamp());
 
     env.events().publish(
-        (symbol_short!("metrics"), symbol_short!("tx_success")),
+        (symbol_short!("metrics"), symbol_short!("tx_ok")),
         (success, gas_used, env.ledger().timestamp()),
     );
 }
@@ -189,7 +189,7 @@ pub fn record_tx_failure(env: &Env, error_type: Symbol) {
     error_freq += 1;
 
     env.events().publish(
-        (symbol_short!("metrics"), symbol_short!("tx_failure")),
+        (symbol_short!("metrics"), symbol_short!("tx_fail")),
         (failures, error_type, env.ledger().timestamp()),
     );
 }
@@ -350,7 +350,7 @@ pub fn check_anomalies(env: &Env) -> Vec<Symbol> {
 
     let perf = get_performance_metrics(env);
     if perf.error_spike_detected {
-        anomalies.push_back(symbol_short!("error_spike"));
+        anomalies.push_back(symbol_short!("err_spike"));
     }
     if perf.high_gas_usage_detected {
         anomalies.push_back(symbol_short!("high_gas"));

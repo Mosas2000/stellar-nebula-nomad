@@ -13,7 +13,7 @@ use soroban_sdk::{contract, contractimpl, contracttype, contracterror,
                    log, symbol_short, Address, Env, String};
 
 use crate::rate_limiter::{check_rate_limit, Operation, RateLimitError};
-use crate::nebula_gen::{NebulaGenContract, NebulaGenError};
+use crate::nebula_gen::{NebulaGen, NebulaError as NebulaGenError};
 
 // ── Resource types ────────────────────────────────────────────
 #[contracttype]
@@ -91,7 +91,7 @@ impl ResourceMinterContract {
         }
 
         // ── Confirm anomaly exists for this ship ───────────────
-        NebulaGenContract::has_anomaly(env, ship_id, anomaly_index)
+        NebulaGen::has_anomaly(env, ship_id, anomaly_index)
             .map_err(|e| match e {
                 NebulaGenError::LayoutNotFound    => MinterError::NoLayoutForShip,
                 NebulaGenError::AnomalyOutOfBounds => MinterError::NoResourceAtAnomaly,

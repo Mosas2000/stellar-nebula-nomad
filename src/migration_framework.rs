@@ -252,7 +252,7 @@ pub fn mark_incompatible(
         .set(&MigrationKey::BackwardCompatible(from_version, to_version), &false);
 
     env.events().publish(
-        (symbol_short!("migration"), symbol_short!("incompatible")),
+        (symbol_short!("migration"), symbol_short!("incomp")),
         (from_version, to_version, env.ledger().timestamp()),
     );
 
@@ -296,7 +296,7 @@ pub fn execute_migration_batch(
         .set(&MigrationKey::RollbackCheckpoint(migration_id), &state.clone());
 
     env.events().publish(
-        (symbol_short!("migration"), symbol_short!("batch_completed")),
+        (symbol_short!("migration"), symbol_short!("batch_ok")),
         (
             migration_id,
             batch_index,
@@ -333,7 +333,7 @@ pub fn rollback_migration(
         .remove(&MigrationKey::RollbackCheckpoint(migration_id));
 
     env.events().publish(
-        (symbol_short!("migration"), symbol_short!("rolled_back")),
+        (symbol_short!("migration"), symbol_short!("rollback")),
         (migration_id, env.ledger().timestamp()),
     );
 

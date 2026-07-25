@@ -224,7 +224,7 @@ pub fn invalidate_cache_entry(
         .set(&CacheKey::IsStale(namespace.clone(), key.clone()), &true);
 
     env.events().publish(
-        (symbol_short!("cache"), symbol_short!("invalidated")),
+        (symbol_short!("cache"), symbol_short!("invalid")),
         (namespace, key, reason, env.ledger().timestamp()),
     );
 }
@@ -240,7 +240,7 @@ pub fn invalidate_namespace(
         .set(&CacheKey::LastInvalidation(namespace.clone()), &env.ledger().timestamp());
 
     env.events().publish(
-        (symbol_short!("cache"), symbol_short!("namespace_invalidated")),
+        (symbol_short!("cache"), symbol_short!("ns_invald")),
         (namespace, reason, env.ledger().timestamp()),
     );
 }
@@ -289,7 +289,7 @@ pub fn configure_ttl(
         .set(&CacheKey::TTLConfig(namespace.clone()), &config);
 
     env.events().publish(
-        (symbol_short!("cache"), symbol_short!("configured")),
+        (symbol_short!("cache"), symbol_short!("config")),
         (namespace, ttl_seconds, auto_refresh, env.ledger().timestamp()),
     );
 
