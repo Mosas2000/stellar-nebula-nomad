@@ -58,6 +58,9 @@ mod gas_sponsor;
 
 mod storage_optim;
 mod state_snapshot;
+mod metrics_exporter;
+mod migration_framework;
+mod cache_ttl_manager;
 
 mod prize_distributor;
 mod portal_registry;

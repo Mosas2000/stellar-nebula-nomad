@@ -293,6 +293,257 @@ Compare the output to the hash you pass to `authorize_upgrade`.
 
 ---
 
+## Migration Framework & Strategy
+
+### Overview
+
+The migration framework (`src/migration_framework.rs`) provides comprehensive support for schema evolution and data transformation during contract upgrades.
+
+### Key Concepts
+
+#### 1. Version Tracking
+
+Each contract deployment has a monotonic version number. Migrations bridge versions:
+
+```rust
+pub struct MigrationRecord {
+    pub from_version: u32,    // e.g., 1
+    pub to_version: u32,      // e.g., 2
+    pub status: Symbol,       // "pending", "in_progress", "completed"
+    pub record_count: u32,    // records migrated
+}
+```
+
+#### 2. Dry-Run Validation
+
+**Always test before production**:
+
+```bash
+# In contract code
+let report = dry_run_migration(&env, &admin, migration_id, sample_records)?;
+if !report.would_succeed {
+    abort_migration("Validation failed");
+}
+```
+
+Dry-run includes:
+- Data validation checks
+- Estimated gas costs
+- Backward compatibility verification
+
+#### 3. Batch Processing
+
+Migrations process in batches to respect gas limits:
+
+```rust
+const MAX_MIGRATION_BATCH: u32 = 100; // records per batch
+
+// Execute 50 records at a time
+execute_migration_batch(
+    &env, &admin, migration_id,
+    batch_idx, total_batches,
+    batch_data // Vec<Bytes> of up to 100 records
+)?;
+```
+
+#### 4. Checkpoints & Rollback
+
+Before each batch, a checkpoint is created:
+
+```rust
+env.storage()
+    .instance()
+    .set(&MigrationKey::RollbackCheckpoint(migration_id), &state);
+```
+
+If an error occurs, rollback to the checkpoint:
+
+```bash
+# In contract
+rollback_migration(&env, &admin, migration_id)?;
+```
+
+### Migration Workflow
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│ 1. PLAN MIGRATION                                            │
+│    - Define from_version → to_version                        │
+│    - Describe transformation logic                           │
+│    - Record metadata                                         │
+└──────────────────────────────────────────────────────────────┘
+                          ↓
+┌──────────────────────────────────────────────────────────────┐
+│ 2. DRY-RUN ON SAMPLE                                         │
+│    - Test with 100-1000 sample records                       │
+│    - Validate transformation results                         │
+│    - Check backward compatibility                            │
+│    - Estimate gas costs                                      │
+└──────────────────────────────────────────────────────────────┘
+                          ↓
+┌──────────────────────────────────────────────────────────────┐
+│ 3. EXECUTE IN BATCHES                                        │
+│    - Process MAX_MIGRATION_BATCH records per call            │
+│    - Create checkpoint before each batch                     │
+│    - Monitor error rate                                      │
+│    - Emit progress events                                    │
+└──────────────────────────────────────────────────────────────┘
+                          ↓
+┌──────────────────────────────────────────────────────────────┐
+│ 4. VALIDATE COMPLETION                                       │
+│    - Verify record count matches total                       │
+│    - Spot-check transformed data                             │
+│    - Compare checksums                                       │
+└──────────────────────────────────────────────────────────────┘
+```
+
+### Example: Adding a New Field to PlayerProfile
+
+**Scenario**: Contract v1 → v2 adds a `reputation_score: u32` field to `PlayerProfile`.
+
+#### 1. Define Migration Handler
+
+```rust
+// In your contract upgrade logic
+fn migrate_player_profiles_v1_to_v2(env: &Env) -> Result<(), MigrationError> {
+    let total_players = env.storage()
+        .persistent()
+        .get(&PlayerListKey::Count)
+        .unwrap_or(0u32);
+
+    let batches_needed = (total_players + MAX_MIGRATION_BATCH - 1) / MAX_MIGRATION_BATCH;
+
+    for batch_idx in 0..batches_needed {
+        let offset = batch_idx * MAX_MIGRATION_BATCH;
+        let batch_size = std::cmp::min(
+            MAX_MIGRATION_BATCH,
+            total_players - offset
+        );
+
+        // 1. Checkpoint before batch
+        let checkpoint = execute_migration_batch(
+            env, &admin, MIGRATION_ID_V1_V2,
+            batch_idx, batches_needed,
+            Vec::new(env), // Pass actual batch data in production
+        )?;
+
+        // 2. Transform records
+        for i in 0..batch_size {
+            let player_idx = offset + i;
+            let player_key = PlayerKey::Profile(player_idx);
+
+            if let Some(mut profile) = env.storage()
+                .persistent()
+                .get::<PlayerKey, PlayerProfile>(&player_key) {
+                
+                // Add new field with default value
+                profile.reputation_score = 0;
+
+                env.storage()
+                    .persistent()
+                    .set(&player_key, &profile);
+            }
+        }
+
+        // 3. Emit progress event
+        env.events().publish(
+            (symbol_short!("migration"), symbol_short!("progress")),
+            (batch_idx + 1, batches_needed, env.ledger().timestamp()),
+        );
+    }
+
+    Ok(())
+}
+```
+
+#### 2. Dry-Run Test (Pseudo-code)
+
+```bash
+# Get sample of 100 player profiles
+sample_records=$(get_random_sample_records 100)
+
+# Test migration without state changes
+dry_run_output=$(stellar contract invoke \
+  --id $CONTRACT_ID \
+  --source-account $ADMIN \
+  -- dry_run_migration_v1_to_v2 \
+  --records $sample_records)
+
+# Verify output contains expected transformation
+assert_contains $dry_run_output "reputation_score: 0"
+assert_contains $dry_run_output "validation_passed: true"
+```
+
+#### 3. Production Migration
+
+```bash
+# Get total player count
+total_players=$(stellar contract invoke \
+  --id $CONTRACT_ID \
+  -- get_player_count)
+
+# Calculate batches (50 per batch)
+batches=$((($total_players + 49) / 50))
+
+# Execute each batch
+for batch_idx in $(seq 0 $((batches - 1))); do
+    echo "Processing batch $((batch_idx + 1))/$batches..."
+    
+    stellar contract invoke \
+      --id $CONTRACT_ID \
+      --source-account $ADMIN \
+      -- execute_migration_batch \
+      --migration_id $MIGRATION_ID \
+      --batch_index $batch_idx \
+      --total_batches $batches \
+      --records $(get_batch_records $batch_idx 50)
+    
+    # Monitor gas and error rate
+    sleep 10  # Stagger requests
+done
+
+# Validate completion
+stellar contract invoke \
+  --id $CONTRACT_ID \
+  -- validate_migration_v1_to_v2
+```
+
+### Backward Compatibility Checks
+
+Before migrating, verify the transformation is compatible:
+
+```rust
+// Mark versions as incompatible if data loss would occur
+mark_incompatible(env, &admin, 1, 2)?;
+
+// Later, check compatibility before allowing data reads
+if !is_backward_compatible(env, from_v, to_v) {
+    return Err(MigrationError::IncompatibleSchema);
+}
+```
+
+### Migration Monitoring
+
+The system automatically emits events for monitoring:
+
+- `migration:planned` — Migration record created
+- `migration:dry_run` — Dry-run completed
+- `migration:batch_completed` — Batch processed
+- `migration:completed` — All batches done
+- `migration:rolled_back` — Rollback executed
+
+Query in Grafana:
+
+```promql
+# Count active migrations
+count(migration_status{status="in_progress"})
+
+# Migration success rate
+rate(migration_status{status="completed"}[1h])
+    /
+rate(migration_status{status="completed" or "failed"}[1h])
+```
+
 ## Troubleshooting
 
 | Symptom | Likely Cause | Solution |
