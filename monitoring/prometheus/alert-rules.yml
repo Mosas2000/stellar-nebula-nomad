@@ -91,3 +91,76 @@ groups:
         annotations:
           summary: "Monitoring target down: {{ $labels.job }}"
           description: "Scrape target {{ $labels.instance }} ({{ $labels.job }}) is unreachable."
+
+      # Soroban contract transaction success rate < 95%
+      - alert: SorobanTxSuccessRateLow
+        expr: |
+          (
+            rate(soroban_tx_success_total[5m])
+            /
+            (rate(soroban_tx_success_total[5m]) + rate(soroban_tx_failure_total[5m]))
+          ) < 0.95
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Soroban transaction success rate {{ $value | humanizePercentage }}"
+          description: "Transaction success rate has dropped below 95%."
+
+      # Soroban gas usage spike detection
+      - alert: SorobanGasUsageSpike
+        expr: |
+          rate(soroban_gas_used_total[5m]) > (rate(soroban_gas_used_total[1h] offset 1h) * 1.5)
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Soroban gas usage spike detected"
+          description: "Gas usage has increased by more than 50% in the last 5 minutes."
+
+      # Cache expiration rate too high
+      - alert: CacheTTLExpirationsHigh
+        expr: |
+          rate(cache_expirations_total[5m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High cache expiration rate"
+          description: "Cache entries are expiring at a high rate (>100 per minute)."
+
+      # Stale data detected in yield forecasts
+      - alert: StaleYieldForecastData
+        expr: |
+          yield_forecast_stale_entries > 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Stale data in yield forecasts"
+          description: "Stale forecast entries detected - immediate invalidation required."
+
+      # Migration in progress but incomplete
+      - alert: MigrationTimeout
+        expr: |
+          (time() - migration_started_timestamp) > 3600 AND migration_status == "in_progress"
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Migration timeout - exceeded 1 hour"
+          description: "Data migration has been running for over 1 hour."
+
+      # Active user count anomaly
+      - alert: ActiveUserCountAnomalous
+        expr: |
+          abs(
+            rate(soroban_active_users[1h])
+            - avg_over_time(rate(soroban_active_users[1h])[24h:1h])
+          ) > 2 * stddev_over_time(rate(soroban_active_users[1h])[24h:1h])
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Anomalous active user count"
+          description: "Active user count deviates significantly from historical average."

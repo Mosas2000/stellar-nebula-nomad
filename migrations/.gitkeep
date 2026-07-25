@@ -1,0 +1,50 @@
+# Migration Scripts Directory
+
+This directory contains migration scripts for contract upgrades.
+
+## Structure
+
+```
+migrations/
+├── v1_to_v2_add_reputation.rs    # Migration from v1 to v2
+├── v2_to_v3_optimize_storage.rs  # Migration from v2 to v3
+└── rollback_v2_to_v1.rs          # Rollback script
+```
+
+## Template
+
+See [UPGRADE_GUIDE.md](../docs/UPGRADE_GUIDE.md#migration-framework--strategy) for full migration workflow.
+
+### Basic Migration Template
+
+```rust
+// migrations/v{N}_to_v{N+1}_{description}.rs
+
+use soroban_sdk::{Env, Address, Result};
+use crate::migration_framework::*;
+
+/// Migrates from version N to N+1
+pub fn execute_migration(env: &Env, admin: &Address) -> Result<MigrationRecord, MigrationError> {
+    // 1. Plan
+    let record = plan_migration(env, admin, N, N+1, symbol_short!("description"))?;
+
+    // 2. Dry-run
+    let report = dry_run_migration(env, admin, record.id, sample_data)?;
+    if !report.would_succeed {
+        return Err(MigrationError::ValidationFailed);
+    }
+
+    // 3. Execute batches
+    let batches = (total_records + MAX_MIGRATION_BATCH - 1) / MAX_MIGRATION_BATCH;
+    for batch_idx in 0..batches {
+        execute_migration_batch(
+            env, admin, record.id, batch_idx, batches, batch_data
+        )?;
+    }
+
+    // 4. Record completion
+    record_migration_completion(env, record.id, N, N+1, total_records);
+
+    Ok(record)
+}
+```
