@@ -170,8 +170,8 @@ pub fn update_score(
 ) -> Result<(), LeaderboardError> {
     player.require_auth();
 
-    validate_category(&category)?;
-    validate_time_period(&time_period)?;
+    validate_category(env, &category)?;
+    validate_time_period(env, &time_period)?;
 
     let key = LeaderboardDataKey::Board(category.clone(), time_period.clone());
     let mut entries: Vec<LeaderboardEntry> = env
@@ -225,8 +225,8 @@ pub fn get_leaderboard(
     time_period: Symbol,
     limit: u32,
 ) -> Result<Vec<LeaderboardEntry>, LeaderboardError> {
-    validate_category(&category)?;
-    validate_time_period(&time_period)?;
+    validate_category(env, &category)?;
+    validate_time_period(env, &time_period)?;
 
     let key = LeaderboardDataKey::Board(category, time_period);
     let entries: Vec<LeaderboardEntry> = env
@@ -342,7 +342,7 @@ pub fn update_regional_score(
     score: u64,
 ) -> Result<(), LeaderboardError> {
     player.require_auth();
-    validate_region(&region)?;
+    validate_region(env, &region)?;
 
     let key = LeaderboardDataKey::RegionalBoard(region.clone(), symbol_short!("board"));
     let mut entries: Vec<RegionalEntry> = env
@@ -385,7 +385,7 @@ pub fn get_regional_leaderboard(
     region: Symbol,
     limit: u32,
 ) -> Result<Vec<RegionalEntry>, LeaderboardError> {
-    validate_region(&region)?;
+    validate_region(env, &region)?;
 
     let key = LeaderboardDataKey::RegionalBoard(region, symbol_short!("board"));
     let entries: Vec<RegionalEntry> = env
@@ -481,8 +481,8 @@ pub fn distribute_rewards(
     rewards: LeaderboardRewards,
 ) -> Result<(), LeaderboardError> {
     require_admin(env, caller)?;
-    validate_category(&category)?;
-    validate_time_period(&time_period)?;
+    validate_category(env, &category)?;
+    validate_time_period(env, &time_period)?;
 
     let entries = get_leaderboard(env, category.clone(), time_period.clone(), 10)?;
 
@@ -523,8 +523,8 @@ pub fn reset_leaderboard(
     time_period: Symbol,
 ) -> Result<u32, LeaderboardError> {
     require_admin(env, caller)?;
-    validate_category(&category)?;
-    validate_time_period(&time_period)?;
+    validate_category(env, &category)?;
+    validate_time_period(env, &time_period)?;
 
     let current_season = get_current_season(env, category.clone(), time_period.clone());
 
@@ -569,8 +569,8 @@ pub fn get_archived_leaderboard(
     season: u32,
     limit: u32,
 ) -> Result<Vec<LeaderboardEntry>, LeaderboardError> {
-    validate_category(&category)?;
-    validate_time_period(&time_period)?;
+    validate_category(env, &category)?;
+    validate_time_period(env, &time_period)?;
 
     let key = LeaderboardDataKey::Archive(category, time_period, season);
     let entries: Vec<LeaderboardEntry> = env
@@ -596,13 +596,14 @@ pub fn reset_if_due(
     category: Symbol,
     time_period: Symbol,
 ) -> Result<bool, LeaderboardError> {
-    validate_category(&category)?;
+    validate_category(env, &category)?;
 
-    let period_str = time_period.to_string();
-    let duration: u64 = match period_str.as_str() {
-        PERIOD_WEEKLY => WEEKLY_DURATION,
-        PERIOD_MONTHLY => MONTHLY_DURATION,
-        _ => return Err(LeaderboardError::InvalidTimePeriod),
+    let duration: u64 = if time_period == symbol_short!("weekly") {
+        WEEKLY_DURATION
+    } else if time_period == symbol_short!("monthly") {
+        MONTHLY_DURATION
+    } else {
+        return Err(LeaderboardError::InvalidTimePeriod);
     };
 
     let now = env.ledger().timestamp();
@@ -626,43 +627,52 @@ pub fn reset_if_due(
 
 // ── Validation Helpers ──────────────────────────────────────────────────────
 
-fn validate_category(category: &Symbol) -> Result<(), LeaderboardError> {
-    let cat_str = category.to_string();
-    match cat_str.as_str() {
-        CATEGORY_ESSENCE
-        | CATEGORY_SCANS
-        | CATEGORY_MISSIONS
-        | CATEGORY_NEBULAE_EXPLORED
-        | CATEGORY_SHIPS_MINTED
-        | CATEGORY_TRADES
-        | CATEGORY_CRAFTS
-        | CATEGORY_BOUNTIES
-        | CATEGORY_PVP_WINS
-        | CATEGORY_PVP_RATING
-        | CATEGORY_GUILD_CONTRIBUTION
-        | CATEGORY_ACHIEVEMENTS => Ok(()),
-        _ => Err(LeaderboardError::InvalidCategory),
+fn validate_category(env: &Env, category: &Symbol) -> Result<(), LeaderboardError> {
+    let c = category.clone();
+    if c == Symbol::new(env, CATEGORY_ESSENCE)
+        || c == Symbol::new(env, CATEGORY_SCANS)
+        || c == Symbol::new(env, CATEGORY_MISSIONS)
+        || c == Symbol::new(env, CATEGORY_NEBULAE_EXPLORED)
+        || c == Symbol::new(env, CATEGORY_SHIPS_MINTED)
+        || c == Symbol::new(env, CATEGORY_TRADES)
+        || c == Symbol::new(env, CATEGORY_CRAFTS)
+        || c == Symbol::new(env, CATEGORY_BOUNTIES)
+        || c == Symbol::new(env, CATEGORY_PVP_WINS)
+        || c == Symbol::new(env, CATEGORY_PVP_RATING)
+        || c == Symbol::new(env, CATEGORY_GUILD_CONTRIBUTION)
+        || c == Symbol::new(env, CATEGORY_ACHIEVEMENTS)
+    {
+        Ok(())
+    } else {
+        Err(LeaderboardError::InvalidCategory)
     }
 }
 
-fn validate_time_period(period: &Symbol) -> Result<(), LeaderboardError> {
-    let period_str = period.to_string();
-    match period_str.as_str() {
-        PERIOD_DAILY | PERIOD_WEEKLY | PERIOD_MONTHLY | PERIOD_ALL_TIME => Ok(()),
-        _ => Err(LeaderboardError::InvalidTimePeriod),
+fn validate_time_period(env: &Env, period: &Symbol) -> Result<(), LeaderboardError> {
+    let p = period.clone();
+    if p == Symbol::new(env, PERIOD_DAILY)
+        || p == Symbol::new(env, PERIOD_WEEKLY)
+        || p == Symbol::new(env, PERIOD_MONTHLY)
+        || p == Symbol::new(env, PERIOD_ALL_TIME)
+    {
+        Ok(())
+    } else {
+        Err(LeaderboardError::InvalidTimePeriod)
     }
 }
 
-fn validate_region(region: &Symbol) -> Result<(), LeaderboardError> {
-    let region_str = region.to_string();
-    match region_str.as_str() {
-        REGION_NORTH_AMERICA
-        | REGION_EUROPE
-        | REGION_ASIA
-        | REGION_SOUTH_AMERICA
-        | REGION_AFRICA
-        | REGION_OCEANIA => Ok(()),
-        _ => Err(LeaderboardError::InvalidRegion),
+fn validate_region(env: &Env, region: &Symbol) -> Result<(), LeaderboardError> {
+    let r = region.clone();
+    if r == Symbol::new(env, REGION_NORTH_AMERICA)
+        || r == Symbol::new(env, REGION_EUROPE)
+        || r == Symbol::new(env, REGION_ASIA)
+        || r == Symbol::new(env, REGION_SOUTH_AMERICA)
+        || r == Symbol::new(env, REGION_AFRICA)
+        || r == Symbol::new(env, REGION_OCEANIA)
+    {
+        Ok(())
+    } else {
+        Err(LeaderboardError::InvalidRegion)
     }
 }
 

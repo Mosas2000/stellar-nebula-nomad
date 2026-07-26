@@ -134,7 +134,10 @@ pub fn set_admin(env: &Env, admin: &Address) {
     env.storage()
         .persistent()
         .set(&ContentDataKey::Admin, admin);
-    env.events().publish(symbol_short!("cnt_admn"), (old_admin, admin.clone()));
+    env.events().publish(
+        (symbol_short!("ct"), symbol_short!("cnt_admn")),
+        (old_admin, admin.clone()),
+    );
 }
 
 fn get_admin(env: &Env) -> Option<Address> {
@@ -371,7 +374,7 @@ pub fn approve_content(
 
     env.events().publish(
         (symbol_short!("ct"), symbol_short!("approved")),
-        (content_id, *caller),
+        (content_id, caller.clone()),
     );
 
     Ok(())
@@ -391,7 +394,7 @@ pub fn reject_content(
 
     env.events().publish(
         (symbol_short!("ct"), symbol_short!("rejected")),
-        (content_id, *caller),
+        (content_id, caller.clone()),
     );
 
     Ok(())

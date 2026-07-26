@@ -10,10 +10,26 @@
 
 #![no_std]
 use soroban_sdk::{contract, contractimpl, contracttype, contracterror,
-                   log, symbol_short, Address, Env, String};
+                   log, symbol_short, Address, Env, String, Symbol};
 
 use crate::rate_limiter::{check_rate_limit, Operation, RateLimitError};
 use crate::nebula_gen::{NebulaGen, NebulaError as NebulaGenError};
+
+pub type AssetId = ResourceType;
+
+#[contracttype]
+#[derive(Clone)]
+pub enum ResourceKey {
+    ResourceBalance(Address, Symbol),
+}
+
+pub fn resource_type_to_symbol(rt: &ResourceType) -> Symbol {
+    match rt {
+        ResourceType::StellarDust => symbol_short!("stdust"),
+        ResourceType::DarkMatter => symbol_short!("drmatt"),
+        ResourceType::ExoticMatter => symbol_short!("exomat"),
+    }
+}
 
 // ── Resource types ────────────────────────────────────────────
 #[contracttype]
@@ -91,7 +107,7 @@ impl ResourceMinterContract {
         }
 
         // ── Confirm anomaly exists for this ship ───────────────
-        NebulaGen::has_anomaly(env, ship_id, anomaly_index)
+        NebulaGen::has_anomaly(env.clone(), ship_id, anomaly_index)
             .map_err(|e| match e {
                 NebulaGenError::LayoutNotFound    => MinterError::NoLayoutForShip,
                 NebulaGenError::AnomalyOutOfBounds => MinterError::NoResourceAtAnomaly,

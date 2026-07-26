@@ -1,7 +1,7 @@
 // DEPRECATED: harvest_resources and related types removed after upstream merge
 // use crate::resource_minter::{harvest_resources, DexOffer, HarvestError, HarvestResult};
 // use crate::NebulaLayout;
-use soroban_sdk::{contracttype, symbol_short, Address, Env, Symbol};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol};
 
 const MAX_LISTINGS_PER_SESSION: u32 = 5;
 
@@ -12,13 +12,17 @@ pub struct DexOffer {
     pub resource: Symbol,
     pub amount: u64,
     pub min_price: i128,
+    pub active: bool,
 }
 
+#[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum HarvestError {
     Deprecated = 1,
+    DexFailure = 2,
 }
 
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HarvestResult {
     pub resources: u64,

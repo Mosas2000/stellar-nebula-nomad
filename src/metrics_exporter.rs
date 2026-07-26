@@ -1,5 +1,5 @@
 use soroban_sdk::{
-    contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec, Map, i128,
+    contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec, Map,
 };
 
 // ─── Prometheus Metrics Exporter for Soroban Contracts ─────────────────────
@@ -123,7 +123,7 @@ pub fn initialize_metrics(env: &Env, admin: &Address) -> Result<(), MetricsError
 
     env.events().publish(
         (symbol_short!("metrics"), symbol_short!("init")),
-        (&admin, env.ledger().timestamp()),
+        (admin.clone(), env.ledger().timestamp()),
     );
 
     Ok(())
@@ -184,7 +184,7 @@ pub fn record_tx_failure(env: &Env, error_type: Symbol) {
         .storage()
         .persistent()
         .get(&MetricsKey::ErrorTypeFrequency)
-        .and_then(|m: Map<Symbol, u64>| m.get(&error_type))
+        .and_then(|m: Map<Symbol, u64>| m.get(error_type.clone()))
         .unwrap_or(0);
     error_freq += 1;
 
@@ -378,7 +378,7 @@ pub fn reset_metrics(env: &Env, admin: &Address) -> Result<(), MetricsError> {
 
     env.events().publish(
         (symbol_short!("metrics"), symbol_short!("reset")),
-        (&admin, env.ledger().timestamp()),
+        (admin.clone(), env.ledger().timestamp()),
     );
 
     Ok(())

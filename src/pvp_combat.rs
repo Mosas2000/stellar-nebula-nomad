@@ -636,70 +636,65 @@ pub fn execute_move(
     }
 
     // Process move
-    let move_str = move_type.to_string();
-    match move_str.as_str() {
-        "attack" => {
-            let damage = power;
-            if is_player1 {
-                combat.player2_hp = combat.player2_hp.saturating_sub(damage);
-            } else {
-                combat.player1_hp = combat.player1_hp.saturating_sub(damage);
-            }
-
-            // Log
-            let log_entry = if is_player1 {
-                Symbol::new(env, "p1_attack")
-            } else {
-                Symbol::new(env, "p2_attack")
-            };
-            combat.history.push_back(log_entry);
+    if move_type == symbol_short!("attack") {
+        let damage = power;
+        if is_player1 {
+            combat.player2_hp = combat.player2_hp.saturating_sub(damage);
+        } else {
+            combat.player1_hp = combat.player1_hp.saturating_sub(damage);
         }
-        "defend" => {
-            // Defend restores some energy
-            if is_player1 {
-                combat.player1_energy = combat.player1_energy.saturating_add(10);
-            } else {
-                combat.player2_energy = combat.player2_energy.saturating_add(10);
-            }
 
-            let log_entry = if is_player1 {
-                Symbol::new(env, "p1_defend")
-            } else {
-                Symbol::new(env, "p2_defend")
-            };
-            combat.history.push_back(log_entry);
+        // Log
+        let log_entry = if is_player1 {
+            Symbol::new(env, "p1_attack")
+        } else {
+            Symbol::new(env, "p2_attack")
+        };
+        combat.history.push_back(log_entry);
+    } else if move_type == symbol_short!("defend") {
+        // Defend restores some energy
+        if is_player1 {
+            combat.player1_energy = combat.player1_energy.saturating_add(10);
+        } else {
+            combat.player2_energy = combat.player2_energy.saturating_add(10);
         }
-        "special" => {
-            let damage = power * 2;
-            if is_player1 {
-                combat.player2_hp = combat.player2_hp.saturating_sub(damage);
-            } else {
-                combat.player1_hp = combat.player1_hp.saturating_sub(damage);
-            }
 
-            let log_entry = if is_player1 {
-                Symbol::new(env, "p1_special")
-            } else {
-                Symbol::new(env, "p2_special")
-            };
-            combat.history.push_back(log_entry);
+        let log_entry = if is_player1 {
+            Symbol::new(env, "p1_defend")
+        } else {
+            Symbol::new(env, "p2_defend")
+        };
+        combat.history.push_back(log_entry);
+    } else if move_type == symbol_short!("special") {
+        let damage = power * 2;
+        if is_player1 {
+            combat.player2_hp = combat.player2_hp.saturating_sub(damage);
+        } else {
+            combat.player1_hp = combat.player1_hp.saturating_sub(damage);
         }
-        "heal" => {
-            let heal = power / 2;
-            if is_player1 {
-                combat.player1_hp = (combat.player1_hp + heal).min(MAX_HP);
-            } else {
-                combat.player2_hp = (combat.player2_hp + heal).min(MAX_HP);
-            }
 
-            let log_entry = if is_player1 {
-                Symbol::new(env, "p1_heal")
-            } else {
-                Symbol::new(env, "p2_heal")
-            };
-            combat.history.push_back(log_entry);
+        let log_entry = if is_player1 {
+            Symbol::new(env, "p1_special")
+        } else {
+            Symbol::new(env, "p2_special")
+        };
+        combat.history.push_back(log_entry);
+    } else if move_type == symbol_short!("heal") {
+        let heal = power / 2;
+        if is_player1 {
+            combat.player1_hp = (combat.player1_hp + heal).min(MAX_HP);
+        } else {
+            combat.player2_hp = (combat.player2_hp + heal).min(MAX_HP);
         }
-        _ => return Err(PvPError::InvalidMove),
+
+        let log_entry = if is_player1 {
+            Symbol::new(env, "p1_heal")
+        } else {
+            Symbol::new(env, "p2_heal")
+        };
+        combat.history.push_back(log_entry);
+    } else {
+        return Err(PvPError::InvalidMove);
     }
 
     // Check for winner

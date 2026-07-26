@@ -104,7 +104,7 @@ pub fn topic_content_admin() -> Symbol {
     symbol_short!("cnt_admn")
 }
 pub fn topic_content_rev_cfg() -> Symbol {
-    symbol_short!("cnt_rev ")
+    symbol_short!("cnt_rev")
 }
 
 // ── Portal Registry ──────────────────────────────────────────────────────────
@@ -320,5 +320,5 @@ pub fn topic_ship_mint_rec() -> Symbol {
 
 // ── Helper: publish a standard event ─────────────────────────────────────────
 pub fn emit(env: &Env, topic: Symbol, data: impl soroban_sdk::IntoVal<Env, soroban_sdk::Val>) {
-    env.events().publish(topic, data);
+    env.events().publish((symbol_short!("evt"), topic), data);
 }
