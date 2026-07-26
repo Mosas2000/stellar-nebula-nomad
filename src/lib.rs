@@ -19,8 +19,6 @@ mod onboarding_tutorial;
 mod leaderboards;
 mod content_tools;
 mod pvp_combat;
-mod tournament;
-mod loot_system;
 
 pub mod events;
 mod batch_processor;
@@ -34,17 +32,13 @@ mod emergency_controls;
 mod metadata_resolver;
 mod randomness_oracle;
 mod rate_limiter;
-mod input_validation;
-pub mod bridge;
-pub mod realtime_events;
 pub mod nebula_gen;
 pub mod ship_upgrade;
 #[cfg(any(test, feature = "fuzz"))]
 pub mod test_helpers;
 mod treasure_vault;
 
-pub mod staking;
-pub mod yield_farming;
+mod yield_farming;
 mod governance;
 mod theme_customizer;
 mod indexer_callbacks;
@@ -57,7 +51,6 @@ mod recycling_crafter;
 mod energy_manager;
 mod environment_simulator;
 mod mission_generator;
-mod ai_mission_engine;
 mod escrow_trader;
 mod audit_logger;
 mod sustainability_metrics;
@@ -83,11 +76,8 @@ mod alliance_manager;
 mod market_oracle;
 mod audio_seed_generator;
 mod privacy_stats;
-mod wallet_abstraction;
-mod bot_detection;
 mod navigation_planner;
 mod event_scheduler;
-mod guild_quests;
 
 mod rewards;
 mod nft_marketplace;
@@ -95,19 +85,9 @@ mod trading;
 mod seasons;
 mod battle_pass;
 
-pub mod achievements;
-
 mod ship_customization;
 mod skins;
 mod crafting;
-pub mod clan_wars;
-pub mod mini_games;
-
-// Retention, economy, content and cosmetic-marketplace systems
-// (Issues #280, #281, #282, #283).
-mod daily_rewards;
-mod quest_system;
-mod token_burning;
 pub mod recipes;
 pub mod notifications {
     pub mod push_service;
@@ -129,7 +109,13 @@ mod gas_optimized_compute;
 mod nomad_bonding;
 mod reentrancy_guard;
 mod composability_examples;
+mod reputation;
+
 pub use reentrancy_guard::ReentrancyError;
+pub use reputation::{
+    ReputationScore, BehaviorRecord, DisputeReport, BehaviorType, ReportStatus,
+    ReputationError,
+};
 
 pub use analytics::{AnalyticsError, GlobalStats};
 pub use access_control::{AccessControlError};
@@ -156,9 +142,6 @@ pub use leaderboards::{
     CATEGORY_CRAFTS, CATEGORY_BOUNTIES, CATEGORY_PVP_WINS,
     CATEGORY_PVP_RATING, CATEGORY_GUILD_CONTRIBUTION, CATEGORY_ACHIEVEMENTS,
     PERIOD_DAILY, PERIOD_WEEKLY, PERIOD_MONTHLY, PERIOD_ALL_TIME,
-    // Seasonal additions
-    PERIOD_SEASONAL, CATEGORY_SEASONAL_SCORE,
-    reset_seasonal_leaderboard,
     MAX_LEADERBOARD_ENTRIES,
 };
 pub use content_tools::{
@@ -232,7 +215,7 @@ pub use environment_simulator::{
     EnvironmentError, ModifierResult,
 };
 pub use mission_generator::{
-    complete_mission, generate_daily_mission, generate_ai_mission, get_player_missions, update_mission_progress,
+    complete_mission, generate_daily_mission, get_player_missions, update_mission_progress,
     Mission, MissionError, MissionReward,
 };
 pub use escrow_trader::{
@@ -334,67 +317,13 @@ pub use event_scheduler::{
     get_active_events, schedule_weekly_festival, cancel_event, update_participants,
     get_event_count, reset_burst_counter as reset_event_burst,
     ScheduledEvent, EventResult, EventError, MAX_ACTIVE_EVENTS, WEEKLY_FESTIVAL_INTERVAL,
-    // Seasonal additions
-    RecurringEventType, TimeLimitedChallenge, ChallengeProgress,
-    schedule_recurring_event, create_time_limited_challenge,
-    record_challenge_progress, claim_challenge_reward,
-    get_active_challenges, get_challenge, get_challenge_progress, expire_challenges,
-    MAX_ACTIVE_CHALLENGES,
 };
 
 pub use ship_customization::{
     mint_skin, apply_skin, get_ship_skin, get_owner_skins, transfer_skin,
     ShipSkin, SkinRarity, SkinError,
-    create_skin_pack, open_skin_pack, fuse_skins,
-    create_auction, place_bid, claim_auction,
-    SkinAuction, SkinPack, SkinFusionResult,
 };
-pub use skins::{
-    get_skin_templates, SkinTemplate,
-    get_full_catalogue, search_templates, get_templates_by_price_range,
-    SkinCatalogueEntry,
-};
-
-pub use clan_wars::{
-    declare_war, fight_battle, claim_ceasefire,
-    get_war, get_alliance_active_war, get_territory, get_alliance_territories, get_battle,
-    WarDeclaration, WarTerritory, BattleRecord, WarRewards, WarStatus, WarError,
-};
-
-pub use mini_games::{
-    start_mini_game, submit_mini_game_score, join_multiplayer_game,
-    create_daily_challenge, claim_daily_challenge,
-    get_leaderboard, reset_daily_plays,
-    MiniGameType, MiniGameSession, DailyChallenge,
-    PlayerMiniGameStats, MiniGameError,
-};
-pub use mini_games::LeaderboardEntry as MiniGameLeaderboardEntry;
-
-// ─── Daily Login Rewards (Issue #280) ─────────────────────────────────────
-pub use daily_rewards::{
-    DailyReward, DailyRewardError, DailyRewardStats, LoginRecord, RewardKind, CALENDAR_DAYS,
-    MAX_STREAK_BONUS_BPS, STREAK_BONUS_BPS_PER_DAY, STREAK_BONUS_CAP_DAYS,
-};
-
-// ─── Token Burning (Issue #281) ───────────────────────────────────────────
-pub use token_burning::{
-    BurnReason, BurnRecord, BurnStats, BurningError, PlayerBurnStats, MAX_BURN_FEE_BPS,
-};
-
-// ─── Quest System (Issue #282) ────────────────────────────────────────────
-pub use quest_system::{
-    ChainProgress, QuestBranch, QuestChain, QuestError, QuestNode, QuestReward, QuestState,
-    QuestStatus, MAX_ACTIVE_QUESTS, MAX_BRANCHES_PER_NODE, MAX_CHAIN_LENGTH,
-};
-
-// ─── Cosmetic NFT Marketplace (Issue #283) ────────────────────────────────
-pub use nft_marketplace::{
-    CosmeticListing, CosmeticMarketStats, CreatorRoyalty, MarketplaceError, SaleSplit,
-    CREATOR_ROYALTY_BPS_DEFAULT, MAX_CREATOR_ROYALTY_BPS, PLATFORM_FEE_BPS,
-};
-pub use skins::{
-    rarity_drop_weight_bps, rarity_floor_price, roll_rarity, SkinPreview, SkinRarityStats,
-};
+pub use skins::{get_skin_templates, SkinTemplate};
 
 pub use economics::monitor::{
     initialize_monitor, update_supply_metrics, track_resource_activity,
@@ -416,13 +345,8 @@ pub use trading::{
     MAX_SLIPPAGE_BPS, AMM_MAX_ROUTE_HOPS, SWAP_FEE_BPS,
 };
 
-pub use crafting::{
-    craft, add_xp, get_level, get_xp, CraftingError,
-    // Skill trees (Issue #266)
-    choose_specialization, get_specialization, get_skill_points,
-    unlock_skill_node, is_node_unlocked, get_mastery_count,
-};
-pub use recipes::{RecipeError, Specialization, set_recipe, set_recipe_specialization, unlock_rare_recipe};
+pub use crafting::{craft, add_xp, get_level, get_xp};
+pub use recipes::{RecipeError, set_recipe, unlock_rare_recipe};
 pub use nomad_bonding::{
     BondError, BondStatus, NomadBond, YieldDelegation,
     create_bond, accept_bond, delegate_yield, claim_yield, dissolve_bond,
@@ -432,63 +356,6 @@ pub use notifications::push_service::{Notification, emit_notification};
 pub use notifications::alerts::{check_low_resources, notify_rare_discovery, notify_crafting_complete};
 pub use mobile_views::{
     MobileDashboard, MobileBatchInfo, MobileViewError, QuickScanPreview,
-};
-
-// ── Seasonal Content System (Issue #258) ─────────────────────────────────────
-
-pub use seasons::{
-    // Core types
-    Season, SeasonConfig, SeasonTheme, SeasonNebulaType,
-    ParticipantStats, SeasonArchive,
-    // Constants
-    SEASON_DURATION_SECS, CHAPTER_DURATION_SECS, CHAPTERS_PER_SEASON,
-    REWARD_PER_SCAN, ESSENCE_REWARD_BPS, CHAPTER_COMPLETION_BONUS,
-    // Functions
-    initialize_season, get_current_season, get_current_chapter,
-    get_seasonal_nebula_type, is_seasonal_nebula_active,
-    get_season_time_remaining, advance_chapter,
-    record_participation, record_seasonal_nebula_discovery,
-    get_participant_stats, rollover_season,
-    claim_season_reward, get_archived_season, get_profile_season_count,
-    // Errors
-    SeasonError,
-};
-
-pub use battle_pass::{
-    // Core types
-    BattlePassState, BattlePassReward, SeasonalCosmetic, PassTier,
-    // Constants
-    XP_PER_SCAN as BP_XP_PER_SCAN, XP_PER_ESSENCE as BP_XP_PER_ESSENCE,
-    XP_PER_CHALLENGE_COMPLETE, XP_PER_SEASONAL_NEBULA,
-    MAX_FREE_TIERS, MAX_PREMIUM_TIERS,
-    // Functions — renamed to avoid collision with crafting::add_xp
-    add_xp as bp_add_xp,
-    add_xp_for_challenge, add_xp_for_seasonal_nebula,
-    unlock_premium_pass, is_premium_holder,
-    claim_reward as bp_claim_reward, claim_reward_v2,
-    init_season_rewards, init_default_season_rewards,
-    get_battle_pass_state, get_pass_progress,
-    register_seasonal_cosmetic, get_seasonal_cosmetic,
-    // Errors
-    BattlePassError,
-};
-
-pub use achievements::{
-    // Types
-    AchievementId, AchievementDef, AchievementProgressEx,
-    AchievementLeaderboardEntry, SeasonalAchievementKey,
-    LeaderboardKey as AchievementLeaderboardKey,
-    // Functions
-    try_unlock, try_unlock_seasonal,
-    query_progress, query_seasonal_progress,
-    get_seasonal_achievements,
-    reset_seasonal_progress,
-    record_challenge_completed, record_leaderboard_top10,
-    emit_achievement_event,
-    increment_leaderboard as increment_achievement_leaderboard,
-    leaderboard_score, leaderboard_top, record_leaderboard_entry,
-    // Errors
-    AchievementsError,
 };
 
 #[contract]
@@ -649,8 +516,8 @@ impl NebulaNomadContract {
         leaderboards::distribute_rewards(&env, &caller, category, time_period, rewards)
     }
 
-    /// Set leaderboard admin (one-time initializer).
-    pub fn set_leaderboard_admin(env: Env, admin: Address) -> Result<(), LeaderboardError> {
+    /// Set leaderboard admin (admin only).
+    pub fn set_leaderboard_admin(env: Env, admin: Address) {
         leaderboards::set_admin(&env, &admin)
     }
 
@@ -776,8 +643,8 @@ impl NebulaNomadContract {
         content_tools::get_marketplace_listing(&env, listing_id)
     }
 
-    /// Set content tools admin (one-time initializer).
-    pub fn set_content_admin(env: Env, admin: Address) -> Result<(), ContentToolsError> {
+    /// Set content tools admin (admin only).
+    pub fn set_content_admin(env: Env, admin: Address) {
         content_tools::set_admin(&env, &admin)
     }
 
@@ -1004,8 +871,8 @@ impl NebulaNomadContract {
         pvp_combat::get_rewards_config(&env)
     }
 
-    /// Set PvP combat admin (one-time initializer).
-    pub fn set_pvp_admin(env: Env, admin: Address) -> Result<(), PvPError> {
+    /// Set PvP combat admin (admin only).
+    pub fn set_pvp_admin(env: Env, admin: Address) {
         pvp_combat::set_admin(&env, &admin)
     }
 
@@ -1736,14 +1603,6 @@ impl NebulaNomadContract {
         player: Address,
     ) -> Result<mission_generator::Mission, mission_generator::MissionError> {
         mission_generator::generate_daily_mission(&env, player)
-    }
-
-    /// Generate an AI-powered procedurally adapted daily mission for player.
-    pub fn generate_ai_mission(
-        env: Env,
-        player: Address,
-    ) -> Result<mission_generator::Mission, mission_generator::MissionError> {
-        mission_generator::generate_ai_mission(&env, player)
     }
 
     /// Complete a mission and claim rewards.
@@ -2860,344 +2719,6 @@ impl NebulaNomadContract {
         skins::get_skin_templates(&env)
     }
 
-    // ─── Daily Login Rewards (Issue #280) ─────────────────────────────────
-
-    /// Claim today's login reward, advancing the calendar and streak.
-    pub fn claim_daily_reward(env: Env, player: Address) -> Result<DailyReward, DailyRewardError> {
-        daily_rewards::claim_daily_reward(&env, player)
-    }
-
-    /// The reward the player would receive if they claimed right now.
-    pub fn preview_daily_reward(
-        env: Env,
-        player: Address,
-    ) -> Result<DailyReward, DailyRewardError> {
-        daily_rewards::preview_daily_reward(&env, &player)
-    }
-
-    /// Whether the player has an unclaimed reward available today.
-    pub fn can_claim_daily_reward(env: Env, player: Address) -> bool {
-        daily_rewards::can_claim(&env, &player)
-    }
-
-    /// The player's consecutive-login streak (0 once it lapses).
-    pub fn get_daily_streak(env: Env, player: Address) -> u32 {
-        daily_rewards::get_streak(&env, &player)
-    }
-
-    /// The player's full login/claim record.
-    pub fn get_login_record(env: Env, player: Address) -> Option<LoginRecord> {
-        daily_rewards::get_login_record(&env, &player)
-    }
-
-    /// Render the whole 28-day calendar at a hypothetical streak.
-    pub fn get_reward_calendar(env: Env, streak: u32) -> Vec<DailyReward> {
-        daily_rewards::get_reward_calendar(&env, streak)
-    }
-
-    /// Aggregate daily-reward statistics.
-    pub fn get_daily_reward_stats(env: Env) -> DailyRewardStats {
-        daily_rewards::get_daily_reward_stats(&env)
-    }
-
-    // ─── Token Burning (Issue #281) ───────────────────────────────────────
-
-    /// Destroy the caller's own resources, reducing circulating supply.
-    pub fn burn_resource(
-        env: Env,
-        burner: Address,
-        resource_type: ResourceType,
-        amount: u64,
-        reason: BurnReason,
-    ) -> Result<BurnRecord, BurningError> {
-        token_burning::burn(&env, burner, resource_type, amount, reason)
-    }
-
-    /// Set the admin permitted to change the deflationary fee rate.
-    pub fn initialize_burn_admin(env: Env, admin: Address) -> Result<(), BurningError> {
-        token_burning::initialize_burn_admin(&env, admin)
-    }
-
-    /// Update the deflationary fee rate (admin only).
-    pub fn set_burn_fee_bps(env: Env, caller: Address, bps: u32) -> Result<(), BurningError> {
-        token_burning::set_burn_fee_bps(&env, caller, bps)
-    }
-
-    /// The configured deflationary fee rate, in basis points.
-    pub fn get_burn_fee_bps(env: Env) -> u32 {
-        token_burning::get_burn_fee_bps(&env)
-    }
-
-    /// Global burn statistics for one resource type.
-    pub fn get_burn_stats(env: Env, resource_type: ResourceType) -> BurnStats {
-        token_burning::get_burn_stats(&env, resource_type)
-    }
-
-    /// A single player's burn contribution.
-    pub fn get_player_burn_stats(env: Env, player: Address) -> PlayerBurnStats {
-        token_burning::get_player_burn_stats(&env, player)
-    }
-
-    /// Share of ever-minted supply that has been burned, in basis points.
-    pub fn get_deflation_rate_bps(env: Env, resource_type: ResourceType) -> u32 {
-        token_burning::deflation_rate_bps(&env, &resource_type)
-    }
-
-    /// Retrieve a burn receipt by ID.
-    pub fn get_burn_record(env: Env, burn_id: u64) -> Option<BurnRecord> {
-        token_burning::get_burn_record(&env, burn_id)
-    }
-
-    /// Transfer resources, burning the deflationary fee slice in transit.
-    pub fn transfer_resource_with_burn(
-        env: Env,
-        from: Address,
-        to: Address,
-        resource_type: ResourceType,
-        amount: u64,
-    ) -> Result<u64, BurningError> {
-        token_burning::transfer_with_burn(&env, from, to, resource_type, amount)
-    }
-
-    /// Amount a player has burned of one specific resource type.
-    pub fn get_player_burned_of(
-        env: Env,
-        player: Address,
-        resource_type: ResourceType,
-    ) -> u64 {
-        token_burning::player_burned_of(&env, &player, &resource_type)
-    }
-
-    /// Sum of burned amounts across every resource type.
-    pub fn get_total_burned_all(env: Env) -> u64 {
-        token_burning::total_burned_all(&env)
-    }
-
-    /// Cumulative amount ever minted of a resource, ignoring burns.
-    pub fn get_total_minted(env: Env, resource_type: ResourceType) -> u64 {
-        resource_minter::total_minted(&env, &resource_type)
-    }
-
-    // ─── Quest System (Issue #282) ────────────────────────────────────────
-
-    /// Create an empty quest chain owned by `creator`.
-    pub fn define_quest_chain(
-        env: Env,
-        creator: Address,
-        name: Symbol,
-    ) -> Result<u64, QuestError> {
-        quest_system::define_chain(&env, creator, name)
-    }
-
-    /// Append a node to a quest chain.
-    #[allow(clippy::too_many_arguments)]
-    pub fn add_quest_node(
-        env: Env,
-        creator: Address,
-        chain_id: u64,
-        objective: Symbol,
-        target_count: u32,
-        reward: QuestReward,
-        narrative_tier: Symbol,
-        title: String,
-        description: String,
-        branches: Vec<QuestBranch>,
-        duration_secs: u64,
-    ) -> Result<u64, QuestError> {
-        quest_system::add_quest_node(
-            &env,
-            creator,
-            chain_id,
-            objective,
-            target_count,
-            reward,
-            narrative_tier,
-            title,
-            description,
-            branches,
-            duration_secs,
-        )
-    }
-
-    /// Verify every branch in a chain points at an existing node.
-    pub fn validate_quest_chain(env: Env, chain_id: u64) -> Result<(), QuestError> {
-        quest_system::validate_chain(&env, chain_id)
-    }
-
-    /// Begin a quest chain, activating its root node.
-    pub fn start_quest_chain(
-        env: Env,
-        player: Address,
-        chain_id: u64,
-    ) -> Result<QuestState, QuestError> {
-        quest_system::start_chain(&env, player, chain_id)
-    }
-
-    /// Add progress to an active quest.
-    pub fn record_quest_progress(
-        env: Env,
-        player: Address,
-        quest_id: u64,
-        amount: u32,
-    ) -> Result<QuestState, QuestError> {
-        quest_system::record_progress(&env, player, quest_id, amount)
-    }
-
-    /// Claim the reward for a completed quest.
-    pub fn claim_quest_reward(
-        env: Env,
-        player: Address,
-        quest_id: u64,
-    ) -> Result<QuestReward, QuestError> {
-        quest_system::claim_quest_reward(&env, player, quest_id)
-    }
-
-    /// Take a branch out of a claimed quest, activating the successor node.
-    pub fn choose_quest_branch(
-        env: Env,
-        player: Address,
-        quest_id: u64,
-        choice_id: u32,
-    ) -> Result<Option<QuestState>, QuestError> {
-        quest_system::choose_branch(&env, player, quest_id, choice_id)
-    }
-
-    /// Fetch a quest node definition.
-    pub fn get_quest_node(env: Env, quest_id: u64) -> Option<QuestNode> {
-        quest_system::get_quest_node(&env, quest_id)
-    }
-
-    /// Fetch a quest chain definition.
-    pub fn get_quest_chain(env: Env, chain_id: u64) -> Option<QuestChain> {
-        quest_system::get_chain(&env, chain_id)
-    }
-
-    /// Fetch a player's state for one quest.
-    pub fn get_quest_state(env: Env, player: Address, quest_id: u64) -> Option<QuestState> {
-        quest_system::get_quest_state(&env, &player, quest_id)
-    }
-
-    /// Fetch a player's progress through one chain, including the path walked.
-    pub fn get_quest_chain_progress(
-        env: Env,
-        player: Address,
-        chain_id: u64,
-    ) -> Option<ChainProgress> {
-        quest_system::get_chain_progress(&env, &player, chain_id)
-    }
-
-    /// State records for the player's currently active quests.
-    pub fn get_active_quests(env: Env, player: Address) -> Vec<QuestState> {
-        quest_system::get_active_quest_states(&env, &player)
-    }
-
-    /// IDs of the player's currently active quests.
-    pub fn get_active_quest_ids(env: Env, player: Address) -> Vec<u64> {
-        quest_system::get_active_quests(&env, &player)
-    }
-
-    // ─── Cosmetic NFT Marketplace (Issue #283) ────────────────────────────
-
-    /// List a cosmetic skin NFT for sale at or above its rarity floor.
-    pub fn list_cosmetic(
-        env: Env,
-        seller: Address,
-        skin_id: u64,
-        price: i128,
-    ) -> Result<CosmeticListing, MarketplaceError> {
-        nft_marketplace::list_cosmetic(&env, &seller, skin_id, price)
-    }
-
-    /// Purchase a listed cosmetic, settling creator royalty and platform fee.
-    pub fn buy_cosmetic(
-        env: Env,
-        buyer: Address,
-        skin_id: u64,
-    ) -> Result<SaleSplit, MarketplaceError> {
-        nft_marketplace::buy_cosmetic(&env, &buyer, skin_id)
-    }
-
-    /// Cancel an open cosmetic listing, releasing the skin from escrow.
-    pub fn cancel_cosmetic_listing(
-        env: Env,
-        seller: Address,
-        skin_id: u64,
-    ) -> Result<(), MarketplaceError> {
-        nft_marketplace::cancel_cosmetic_listing(&env, &seller, skin_id)
-    }
-
-    /// The open cosmetic listing for a skin, if any.
-    pub fn get_cosmetic_listing(env: Env, skin_id: u64) -> Option<CosmeticListing> {
-        nft_marketplace::get_cosmetic_listing(&env, skin_id)
-    }
-
-    /// Register a perpetual creator royalty on a cosmetic (owner only, once).
-    pub fn register_creator_royalty(
-        env: Env,
-        creator: Address,
-        skin_id: u64,
-        bps: i128,
-    ) -> Result<CreatorRoyalty, MarketplaceError> {
-        nft_marketplace::register_creator_royalty(&env, &creator, skin_id, bps)
-    }
-
-    /// The registered creator royalty for a cosmetic.
-    pub fn get_creator_royalty(env: Env, skin_id: u64) -> Option<CreatorRoyalty> {
-        nft_marketplace::get_creator_royalty(&env, skin_id)
-    }
-
-    /// Royalties credited to a creator and not yet withdrawn.
-    pub fn get_creator_earnings(env: Env, creator: Address) -> i128 {
-        nft_marketplace::get_creator_earnings(&env, &creator)
-    }
-
-    /// Withdraw all accrued creator royalties.
-    pub fn withdraw_creator_earnings(
-        env: Env,
-        creator: Address,
-    ) -> Result<i128, MarketplaceError> {
-        nft_marketplace::withdraw_creator_earnings(&env, &creator)
-    }
-
-    /// How a given price would be split, before listing.
-    pub fn compute_cosmetic_sale_split(
-        _env: Env,
-        price: i128,
-        royalty_bps: i128,
-    ) -> Result<SaleSplit, MarketplaceError> {
-        nft_marketplace::compute_sale_split(price, royalty_bps)
-    }
-
-    /// Aggregate cosmetic-market statistics.
-    pub fn get_cosmetic_market_stats(env: Env) -> CosmeticMarketStats {
-        nft_marketplace::get_cosmetic_market_stats(&env)
-    }
-
-    /// Render a cosmetic for a storefront card without owning it.
-    pub fn preview_cosmetic(env: Env, skin_id: u64) -> Option<SkinPreview> {
-        nft_marketplace::preview_cosmetic_listing(&env, skin_id)
-    }
-
-    /// Render a catalogue template by name.
-    pub fn preview_skin_template(env: Env, name: Symbol) -> Option<SkinPreview> {
-        skins::preview_template(&env, name)
-    }
-
-    /// All catalogue templates of one rarity tier.
-    pub fn get_templates_by_rarity(env: Env, rarity: SkinRarity) -> Vec<SkinTemplate> {
-        skins::get_templates_by_rarity(&env, rarity)
-    }
-
-    /// Weighted rarity roll from a caller-supplied seed.
-    pub fn roll_skin_rarity(_env: Env, seed: u64) -> SkinRarity {
-        skins::roll_rarity(seed)
-    }
-
-    /// Catalogue composition by rarity.
-    pub fn get_skin_rarity_stats(env: Env) -> SkinRarityStats {
-        skins::get_rarity_stats(&env)
-    }
-
     // ─── Economic Monitoring & Balancing ──────────────────────────────────
 
     pub fn initialize_economic_monitor(env: Env, admin: Address) {
@@ -3380,234 +2901,75 @@ impl NebulaNomadContract {
         mobile_views::subscribe_mobile_events(&env, &player);
     }
 
-    // ── Gas Sponsorship (Issue #286) ──────────────────────────────────────────
-    // Pre-existing gap: this whole module was never wired as real invokable
-    // entry points before this batch of fixes — only reachable internally
-    // via the `pub use gas_sponsor::{...}` re-export below, never callable
-    // by an external transaction. Wiring all of it, not just the functions
-    // added for #286, since none of it was wired.
+    // ── Reputation System (Issue #261) ────────────────────────────────────────
 
-    pub fn initialize_sponsorship(
-        env: Env,
-        admin: Address,
-        initial_fund: i128,
-    ) -> Result<(), SponsorError> {
-        gas_sponsor::initialize(&env, &admin, initial_fund)
+    pub fn initialize_reputation_system(env: Env, admin: Address) -> Result<(), ReputationError> {
+        reputation::initialize_reputation(&env, &admin)
     }
 
-    pub fn sponsor_first_scan(env: Env, player: Address) -> Result<i128, SponsorError> {
-        gas_sponsor::sponsor_first_scan(&env, &player)
+    pub fn create_player_reputation(env: Env, player: Address) -> Result<(), ReputationError> {
+        reputation::create_player_reputation(&env, &player)
     }
 
-    /// View-only eligibility check — no auth required, safe to call via
-    /// `simulateTransaction` from an off-chain relayer before it builds a
-    /// real fee-bump transaction.
-    pub fn check_sponsorship_eligibility(env: Env, player: Address) -> Result<(), SponsorError> {
-        gas_sponsor::check_sponsorship_eligibility(&env, &player)
+    pub fn get_player_reputation_score(env: Env, player: Address) -> Result<u32, ReputationError> {
+        reputation::get_reputation_score(&env, &player)
     }
 
-    pub fn claim_sponsorship_fund(
-        env: Env,
-        admin: Address,
-        amount: i128,
-    ) -> Result<i128, SponsorError> {
-        gas_sponsor::claim_sponsorship_fund(&env, &admin, amount)
+    pub fn get_player_reputation_details(env: Env, player: Address) -> Result<ReputationScore, ReputationError> {
+        reputation::get_reputation_details(&env, &player)
     }
 
-    pub fn has_been_sponsored(env: Env, player: Address) -> bool {
-        gas_sponsor::has_been_sponsored(&env, &player)
-    }
-
-    pub fn get_sponsorship_fund_balance(env: Env) -> i128 {
-        gas_sponsor::get_fund_balance(&env)
-    }
-
-    pub fn get_sponsorship_daily_count(env: Env) -> u32 {
-        gas_sponsor::get_daily_count(&env)
-    }
-
-    pub fn get_sponsorship_remaining_slots(env: Env) -> u32 {
-        gas_sponsor::get_remaining_daily_slots(&env)
-    }
-
-    pub fn get_sponsorship_admin(env: Env) -> Option<Address> {
-        gas_sponsor::get_admin(&env)
-    }
-
-    pub fn get_sponsorship_config(env: Env) -> Option<SponsorConfig> {
-        gas_sponsor::get_config(&env)
-    }
-
-    pub fn update_sponsorship_config(
-        env: Env,
-        admin: Address,
-        min_threshold: i128,
-        sponsor_amount: i128,
-        daily_cap: u32,
-        per_user_cap: i128,
-        per_user_daily_cap: u32,
-    ) -> Result<SponsorConfig, SponsorError> {
-        gas_sponsor::update_config(
-            &env,
-            &admin,
-            min_threshold,
-            sponsor_amount,
-            daily_cap,
-            per_user_cap,
-            per_user_daily_cap,
-        )
-    }
-
-    pub fn mark_sponsorship_profile_valid(env: Env, player: Address) {
-        gas_sponsor::mark_profile_verified(&env, &player);
-    }
-
-    pub fn get_sponsorship_user_lifetime(env: Env, player: Address) -> i128 {
-        gas_sponsor::get_user_lifetime_sponsored(&env, &player)
-    }
-
-    pub fn get_sponsorship_user_daily_count(env: Env, player: Address) -> u32 {
-        gas_sponsor::get_user_daily_count(&env, &player)
-    }
-
-    pub fn get_sponsorship_pool(env: Env) -> Vec<gas_sponsor::SponsorshipRecord> {
-        gas_sponsor::get_sponsorship_pool(&env)
-    }
-
-    pub fn get_sponsorship_pool_size(env: Env) -> u32 {
-        gas_sponsor::get_sponsorship_pool_size(&env)
-    }
-
-    // ── Tournament System (Issue #284) ────────────────────────────────────────
-
-    pub fn create_tournament(
-        env: Env,
-        organizer: Address,
-        resource_type: resource_minter::ResourceType,
-        entry_fee: u64,
-        max_players: u32,
-        registration_window_secs: u64,
-        prize_distribution_bps: Vec<u32>,
-    ) -> Result<u64, tournament::TournamentError> {
-        tournament::create_tournament(
-            &env,
-            &organizer,
-            resource_type,
-            entry_fee,
-            max_players,
-            registration_window_secs,
-            prize_distribution_bps,
-        )
-    }
-
-    pub fn get_tournament(
-        env: Env,
-        tournament_id: u64,
-    ) -> Result<tournament::Tournament, tournament::TournamentError> {
-        tournament::get_tournament(&env, tournament_id)
-    }
-
-    pub fn get_tournament_registrants(env: Env, tournament_id: u64) -> Vec<Address> {
-        tournament::get_registrants(&env, tournament_id)
-    }
-
-    pub fn register_for_tournament(
+    pub fn record_player_behavior(
         env: Env,
         player: Address,
-        tournament_id: u64,
-    ) -> Result<u32, tournament::TournamentError> {
-        tournament::register_for_tournament(&env, &player, tournament_id)
+        behavior_type: BehaviorType,
+        description: String,
+        points: i32,
+        reporter: Address,
+    ) -> Result<(), ReputationError> {
+        reputation::record_behavior(&env, &player, behavior_type, description, points, reporter)
     }
 
-    pub fn start_tournament(
+    pub fn submit_dispute_report(
         env: Env,
-        caller: Address,
-        tournament_id: u64,
-    ) -> Result<(), tournament::TournamentError> {
-        tournament::start_tournament(&env, &caller, tournament_id)
+        reporter: Address,
+        accused: Address,
+        reason: String,
+        evidence: String,
+    ) -> Result<u64, ReputationError> {
+        reputation::submit_report(&env, &reporter, &accused, reason, evidence)
     }
 
-    pub fn get_tournament_bracket_round(
-        env: Env,
-        tournament_id: u64,
-        round: u32,
-    ) -> Vec<tournament::BracketMatch> {
-        tournament::get_bracket_round(&env, tournament_id, round)
-    }
-
-    /// Pull a finished `pvp_combat` combat's result into its tournament
-    /// bracket match, advancing the round (or finishing the tournament and
-    /// paying out prizes) once every match in the round has resolved.
-    pub fn report_tournament_match_result(
-        env: Env,
-        tournament_id: u64,
-        round: u32,
-        match_index: u32,
-    ) -> Result<(), tournament::TournamentError> {
-        tournament::report_match_result(&env, tournament_id, round, match_index)
-    }
-
-    // ── Loot Box System (Issue #287) ──────────────────────────────────────────
-
-    pub fn set_loot_admin(env: Env, admin: Address) -> Result<(), loot_system::LootError> {
-        loot_system::set_loot_admin(&env, &admin)
-    }
-
-    pub fn create_loot_box_type(
+    pub fn resolve_dispute_report(
         env: Env,
         admin: Address,
-        name: String,
-        cost_loot_tokens: u64,
-        entries: Vec<loot_system::LootEntry>,
-    ) -> Result<u64, loot_system::LootError> {
-        loot_system::create_box_type(&env, &admin, name, cost_loot_tokens, entries)
+        report_id: u64,
+        resolved: bool,
+    ) -> Result<(), ReputationError> {
+        reputation::resolve_report(&env, &admin, report_id, resolved)
     }
 
-    pub fn get_loot_box_type(
-        env: Env,
-        box_type_id: u64,
-    ) -> Result<loot_system::LootBoxType, loot_system::LootError> {
-        loot_system::get_box_type(&env, box_type_id)
+    pub fn ban_player_account(env: Env, admin: Address, player: Address) -> Result<(), ReputationError> {
+        reputation::ban_player(&env, &admin, &player)
     }
 
-    pub fn get_loot_token_balance(env: Env, player: Address) -> u64 {
-        loot_system::get_loot_token_balance(&env, &player)
+    pub fn check_player_ban_status(env: Env, player: Address) -> bool {
+        reputation::is_player_banned(&env, &player)
     }
 
-    /// Admin-gated: the *only* way `LootToken` balance ever increases (via
-    /// achievement/tournament completion etc. in game logic) — there is no
-    /// purchase path, by design (Issue #287's "no real money" requirement).
-    pub fn grant_loot_tokens(
-        env: Env,
-        admin: Address,
-        player: Address,
-        amount: u64,
-    ) -> Result<u64, loot_system::LootError> {
-        loot_system::grant_loot_tokens(&env, &admin, &player, amount)
+    pub fn get_player_behavior_history(env: Env, player: Address) -> Vec<BehaviorRecord> {
+        reputation::get_player_history(&env, &player)
     }
 
-    pub fn commit_loot_open(
-        env: Env,
-        player: Address,
-        box_type_id: u64,
-        player_seed_hash: BytesN<32>,
-    ) -> Result<u64, loot_system::LootError> {
-        loot_system::commit_loot_open(&env, &player, box_type_id, player_seed_hash)
+    pub fn get_player_report_count(env: Env, player: Address) -> u32 {
+        reputation::get_player_report_count(&env, &player)
     }
 
-    pub fn reveal_loot_open(
-        env: Env,
-        player: Address,
-        request_id: u64,
-        player_seed: BytesN<32>,
-    ) -> Result<loot_system::LootResult, loot_system::LootError> {
-        loot_system::reveal_loot_open(&env, &player, request_id, player_seed)
+    pub fn get_all_dispute_reports(env: Env) -> Vec<DisputeReport> {
+        reputation::get_all_reports(&env)
     }
 
-    pub fn get_loot_open_request(
-        env: Env,
-        request_id: u64,
-    ) -> Result<loot_system::OpenRequest, loot_system::LootError> {
-        loot_system::get_open_request(&env, request_id)
+    pub fn claim_reputation_reward(env: Env, player: Address) -> Result<i128, ReputationError> {
+        reputation::claim_reputation_reward(&env, &player)
     }
 }

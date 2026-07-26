@@ -12,6 +12,8 @@ pub enum OracleKey {
     ResourcePrice(Symbol),      // resource -> PriceData
     PriceHistory(Symbol),       // resource -> Vec<PriceData> (last 24h)
     OracleSources,              // -> Vec<Address>
+    EventTriggers,              // -> Vec<EventTrigger>
+    PriceFeed(Symbol),          // resource -> Vec<i128> (Chainlink feed data)
 }
 
 #[contracterror]
@@ -24,6 +26,8 @@ pub enum OracleError {
     ResourceNotFound = 4,
     TooManyUpdates = 5,
     NoOracleSources = 6,
+    EventTriggerNotFound = 7,
+    InvalidTriggerPrice = 8,
 }
 
 #[derive(Clone, Debug)]
@@ -33,6 +37,18 @@ pub struct PriceData {
     pub price: i128,
     pub timestamp: u64,
     pub source_count: u32,
+}
+
+/// Event trigger configuration for real-world data events.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct EventTrigger {
+    pub id: u64,
+    pub resource: Symbol,
+    pub trigger_price: i128,
+    pub trigger_type: Symbol, // "above", "below", "equals"
+    pub active: bool,
+    pub created_at: u64,
 }
 
 /// Initialize the market oracle with admin and default sources
@@ -210,6 +226,157 @@ pub fn add_oracle_source(env: &Env, admin: Address, new_source: Address) -> Resu
         (symbol_short!("oracle"), symbol_short!("source")),
         (new_source,),
     );
-    
+
     Ok(())
+}
+
+// ─── Event Triggers for Real-World Data Events ────────────────────────────
+
+/// Register a price trigger that fires an event when price threshold is reached.
+pub fn register_price_trigger(
+    env: &Env,
+    admin: Address,
+    resource: Symbol,
+    trigger_price: i128,
+    trigger_type: Symbol,
+) -> Result<u64, OracleError> {
+    admin.require_auth();
+
+    let stored_admin: Address = env
+        .storage()
+        .persistent()
+        .get(&OracleKey::Admin)
+        .ok_or(OracleError::Unauthorized)?;
+
+    if admin != stored_admin {
+        return Err(OracleError::Unauthorized);
+    }
+
+    if trigger_price < 0 {
+        return Err(OracleError::InvalidTriggerPrice);
+    }
+
+    let mut triggers: Vec<EventTrigger> = env
+        .storage()
+        .persistent()
+        .get(&OracleKey::EventTriggers)
+        .unwrap_or(Vec::new(env));
+
+    let trigger_id = env.ledger().sequence();
+    let trigger = EventTrigger {
+        id: trigger_id,
+        resource: resource.clone(),
+        trigger_price,
+        trigger_type,
+        active: true,
+        created_at: env.ledger().timestamp(),
+    };
+
+    triggers.push_back(trigger);
+    env.storage()
+        .persistent()
+        .set(&OracleKey::EventTriggers, &triggers);
+
+    env.events().publish(
+        (symbol_short!("oracle"), symbol_short!("trgger")),
+        (trigger_id, resource, trigger_price),
+    );
+
+    Ok(trigger_id)
+}
+
+/// Check and fire events based on registered triggers.
+pub fn check_and_fire_triggers(env: &Env, resource: Symbol) -> Result<Vec<u64>, OracleError> {
+    let current_price = get_current_market_rate(env, resource.clone())?;
+
+    let triggers: Vec<EventTrigger> = env
+        .storage()
+        .persistent()
+        .get(&OracleKey::EventTriggers)
+        .unwrap_or(Vec::new(env));
+
+    let mut fired_triggers: Vec<u64> = Vec::new(env);
+
+    for trigger in triggers.iter() {
+        if trigger.resource != resource || !trigger.active {
+            continue;
+        }
+
+        let should_fire = if trigger.trigger_type == symbol_short!("above") {
+            current_price >= trigger.trigger_price
+        } else if trigger.trigger_type == symbol_short!("below") {
+            current_price <= trigger.trigger_price
+        } else if trigger.trigger_type == symbol_short!("equal") {
+            current_price == trigger.trigger_price
+        } else {
+            false
+        };
+
+        if should_fire {
+            fired_triggers.push_back(trigger.id);
+            env.events().publish(
+                (symbol_short!("oracle"), symbol_short!("fired")),
+                (trigger.id, resource.clone(), current_price),
+            );
+        }
+    }
+
+    Ok(fired_triggers)
+}
+
+/// Deactivate a trigger.
+pub fn disable_trigger(env: &Env, admin: Address, trigger_id: u64) -> Result<(), OracleError> {
+    admin.require_auth();
+
+    let stored_admin: Address = env
+        .storage()
+        .persistent()
+        .get(&OracleKey::Admin)
+        .ok_or(OracleError::Unauthorized)?;
+
+    if admin != stored_admin {
+        return Err(OracleError::Unauthorized);
+    }
+
+    let mut triggers: Vec<EventTrigger> = env
+        .storage()
+        .persistent()
+        .get(&OracleKey::EventTriggers)
+        .ok_or(OracleError::EventTriggerNotFound)?;
+
+    for trigger in triggers.iter_mut() {
+        if trigger.id == trigger_id {
+            trigger.active = false;
+            env.storage()
+                .persistent()
+                .set(&OracleKey::EventTriggers, &triggers);
+
+            env.events().publish(
+                (symbol_short!("oracle"), symbol_short!("disable")),
+                trigger_id,
+            );
+
+            return Ok(());
+        }
+    }
+
+    Err(OracleError::EventTriggerNotFound)
+}
+
+/// Get all active triggers for a resource.
+pub fn get_active_triggers(env: &Env, resource: Symbol) -> Vec<EventTrigger> {
+    let triggers: Vec<EventTrigger> = env
+        .storage()
+        .persistent()
+        .get(&OracleKey::EventTriggers)
+        .unwrap_or(Vec::new(env));
+
+    let mut active: Vec<EventTrigger> = Vec::new(env);
+    for trigger in triggers.iter() {
+        if trigger.resource == resource && trigger.active {
+            active.push_back(trigger);
+        }
+    }
+
+    active
 }
