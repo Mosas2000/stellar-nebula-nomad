@@ -118,6 +118,7 @@ pub const CATEGORY_PVP_WINS: &str = "pvp_wins";
 pub const CATEGORY_PVP_RATING: &str = "pvp_rating";
 pub const CATEGORY_GUILD_CONTRIBUTION: &str = "guild_contrib";
 pub const CATEGORY_ACHIEVEMENTS: &str = "achievements";
+pub const CATEGORY_SEASONAL_SCORE_CONST: &str = "seas_score";
 
 // ── Time Periods ─────────────────────────────────────────────────────────────
 
@@ -125,6 +126,11 @@ pub const PERIOD_DAILY: &str = "daily";
 pub const PERIOD_WEEKLY: &str = "weekly";
 pub const PERIOD_MONTHLY: &str = "monthly";
 pub const PERIOD_ALL_TIME: &str = "all_time";
+/// Time period covering one full 90-day game season (resets at rollover).
+pub const PERIOD_SEASONAL: &str = "seasonal";
+
+/// Leaderboard category for composite seasonal performance score.
+pub const CATEGORY_SEASONAL_SCORE: &str = "seas_score";
 
 // ── Regions ──────────────────────────────────────────────────────────────────
 
@@ -625,6 +631,65 @@ pub fn reset_if_due(
     }
 }
 
+// ── Seasonal Leaderboard Reset ───────────────────────────────────────────────
+
+/// Archive the current seasonal leaderboard for `category` and clear the live
+/// board, ready for the next season.
+///
+/// Uses the existing `LeaderboardDataKey::Archive(category, PERIOD_SEASONAL,
+/// season_number)` key — `season_id` is cast to `u32` as the archive index.
+/// Called automatically during `rollover_season` in `seasons.rs`.
+///
+/// Returns the newly bumped season number for this board.
+pub fn reset_seasonal_leaderboard(
+    env: &Env,
+    caller: &Address,
+    category: Symbol,
+    season_id: u64,
+) -> Result<u32, LeaderboardError> {
+    require_admin(env, caller)?;
+    validate_category(env, &category)?;
+
+    let period_sym = Symbol::new(env, PERIOD_SEASONAL);
+    let board_key = LeaderboardDataKey::Board(category.clone(), period_sym.clone());
+
+    // Archive live entries under the ending season_id.
+    let entries: Vec<LeaderboardEntry> = env
+        .storage()
+        .persistent()
+        .get(&board_key)
+        .unwrap_or_else(|| Vec::new(env));
+
+    let archive_season = season_id as u32;
+    let archive_key = LeaderboardDataKey::Archive(category.clone(), period_sym.clone(), archive_season);
+    env.storage().persistent().set(&archive_key, &entries);
+
+    // Clear the live board.
+    let empty: Vec<LeaderboardEntry> = Vec::new(env);
+    env.storage().persistent().set(&board_key, &empty);
+
+    // Bump the season counter for this (category, seasonal) key.
+    let next_season = archive_season + 1;
+    env.storage()
+        .persistent()
+        .set(&LeaderboardDataKey::Season(category.clone(), period_sym.clone()), &next_season);
+
+    // Record reset timestamp.
+    env.storage()
+        .persistent()
+        .set(
+            &LeaderboardDataKey::LastReset(category.clone(), period_sym.clone()),
+            &env.ledger().timestamp(),
+        );
+
+    env.events().publish(
+        (symbol_short!("lb"), symbol_short!("seas_rst")),
+        (category, season_id, next_season),
+    );
+
+    Ok(next_season)
+}
+
 // ── Validation Helpers ──────────────────────────────────────────────────────
 
 fn validate_category(env: &Env, category: &Symbol) -> Result<(), LeaderboardError> {
@@ -654,6 +719,7 @@ fn validate_time_period(env: &Env, period: &Symbol) -> Result<(), LeaderboardErr
         || p == Symbol::new(env, PERIOD_WEEKLY)
         || p == Symbol::new(env, PERIOD_MONTHLY)
         || p == Symbol::new(env, PERIOD_ALL_TIME)
+        || p == Symbol::new(env, PERIOD_SEASONAL)
     {
         Ok(())
     } else {

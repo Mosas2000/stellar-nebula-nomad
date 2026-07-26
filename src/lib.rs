@@ -51,6 +51,7 @@ mod recycling_crafter;
 mod energy_manager;
 mod environment_simulator;
 mod mission_generator;
+mod ai_mission_engine;
 mod escrow_trader;
 mod audit_logger;
 mod sustainability_metrics;
@@ -84,6 +85,8 @@ mod nft_marketplace;
 mod trading;
 mod seasons;
 mod battle_pass;
+
+pub mod achievements;
 
 mod ship_customization;
 mod skins;
@@ -136,6 +139,9 @@ pub use leaderboards::{
     CATEGORY_CRAFTS, CATEGORY_BOUNTIES, CATEGORY_PVP_WINS,
     CATEGORY_PVP_RATING, CATEGORY_GUILD_CONTRIBUTION, CATEGORY_ACHIEVEMENTS,
     PERIOD_DAILY, PERIOD_WEEKLY, PERIOD_MONTHLY, PERIOD_ALL_TIME,
+    // Seasonal additions
+    PERIOD_SEASONAL, CATEGORY_SEASONAL_SCORE,
+    reset_seasonal_leaderboard,
     MAX_LEADERBOARD_ENTRIES,
 };
 pub use content_tools::{
@@ -209,7 +215,7 @@ pub use environment_simulator::{
     EnvironmentError, ModifierResult,
 };
 pub use mission_generator::{
-    complete_mission, generate_daily_mission, get_player_missions, update_mission_progress,
+    complete_mission, generate_daily_mission, generate_ai_mission, get_player_missions, update_mission_progress,
     Mission, MissionError, MissionReward,
 };
 pub use escrow_trader::{
@@ -311,6 +317,12 @@ pub use event_scheduler::{
     get_active_events, schedule_weekly_festival, cancel_event, update_participants,
     get_event_count, reset_burst_counter as reset_event_burst,
     ScheduledEvent, EventResult, EventError, MAX_ACTIVE_EVENTS, WEEKLY_FESTIVAL_INTERVAL,
+    // Seasonal additions
+    RecurringEventType, TimeLimitedChallenge, ChallengeProgress,
+    schedule_recurring_event, create_time_limited_challenge,
+    record_challenge_progress, claim_challenge_reward,
+    get_active_challenges, get_challenge, get_challenge_progress, expire_challenges,
+    MAX_ACTIVE_CHALLENGES,
 };
 
 pub use ship_customization::{
@@ -350,6 +362,63 @@ pub use notifications::push_service::{Notification, emit_notification};
 pub use notifications::alerts::{check_low_resources, notify_rare_discovery, notify_crafting_complete};
 pub use mobile_views::{
     MobileDashboard, MobileBatchInfo, MobileViewError, QuickScanPreview,
+};
+
+// ── Seasonal Content System (Issue #258) ─────────────────────────────────────
+
+pub use seasons::{
+    // Core types
+    Season, SeasonConfig, SeasonTheme, SeasonNebulaType,
+    ParticipantStats, SeasonArchive,
+    // Constants
+    SEASON_DURATION_SECS, CHAPTER_DURATION_SECS, CHAPTERS_PER_SEASON,
+    REWARD_PER_SCAN, ESSENCE_REWARD_BPS, CHAPTER_COMPLETION_BONUS,
+    // Functions
+    initialize_season, get_current_season, get_current_chapter,
+    get_seasonal_nebula_type, is_seasonal_nebula_active,
+    get_season_time_remaining, advance_chapter,
+    record_participation, record_seasonal_nebula_discovery,
+    get_participant_stats, rollover_season,
+    claim_season_reward, get_archived_season, get_profile_season_count,
+    // Errors
+    SeasonError,
+};
+
+pub use battle_pass::{
+    // Core types
+    BattlePassState, BattlePassReward, SeasonalCosmetic, PassTier,
+    // Constants
+    XP_PER_SCAN as BP_XP_PER_SCAN, XP_PER_ESSENCE as BP_XP_PER_ESSENCE,
+    XP_PER_CHALLENGE_COMPLETE, XP_PER_SEASONAL_NEBULA,
+    MAX_FREE_TIERS, MAX_PREMIUM_TIERS,
+    // Functions — renamed to avoid collision with crafting::add_xp
+    add_xp as bp_add_xp,
+    add_xp_for_challenge, add_xp_for_seasonal_nebula,
+    unlock_premium_pass, is_premium_holder,
+    claim_reward as bp_claim_reward, claim_reward_v2,
+    init_season_rewards, init_default_season_rewards,
+    get_battle_pass_state, get_pass_progress,
+    register_seasonal_cosmetic, get_seasonal_cosmetic,
+    // Errors
+    BattlePassError,
+};
+
+pub use achievements::{
+    // Types
+    AchievementId, AchievementDef, AchievementProgressEx,
+    AchievementLeaderboardEntry, SeasonalAchievementKey,
+    LeaderboardKey as AchievementLeaderboardKey,
+    // Functions
+    try_unlock, try_unlock_seasonal,
+    query_progress, query_seasonal_progress,
+    get_seasonal_achievements,
+    reset_seasonal_progress,
+    record_challenge_completed, record_leaderboard_top10,
+    emit_achievement_event,
+    increment_leaderboard as increment_achievement_leaderboard,
+    leaderboard_score, leaderboard_top, record_leaderboard_entry,
+    // Errors
+    AchievementsError,
 };
 
 #[contract]
@@ -1597,6 +1666,14 @@ impl NebulaNomadContract {
         player: Address,
     ) -> Result<mission_generator::Mission, mission_generator::MissionError> {
         mission_generator::generate_daily_mission(&env, player)
+    }
+
+    /// Generate an AI-powered procedurally adapted daily mission for player.
+    pub fn generate_ai_mission(
+        env: Env,
+        player: Address,
+    ) -> Result<mission_generator::Mission, mission_generator::MissionError> {
+        mission_generator::generate_ai_mission(&env, player)
     }
 
     /// Complete a mission and claim rewards.

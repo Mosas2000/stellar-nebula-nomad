@@ -13,6 +13,27 @@ pub enum AllianceKey {
     MemberAlliance(Address),    // player -> alliance_id
     AllianceTreasury(u64),      // alliance_id -> i128
     MemberContribution(u64, Address), // (alliance_id, member) -> i128
+    AllianceLevelInfo(u64),     // alliance_id -> GuildLevelInfo
+    TerritoryClaim(u64),        // coordinate_hash -> alliance_id
+    GuildBoss(u64),             // alliance_id -> GuildBossState
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[contracttype]
+pub struct GuildLevelInfo {
+    pub level: u32,
+    pub xp: u64,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+#[contracttype]
+pub struct GuildBossState {
+    pub boss_id: u32,
+    pub max_health: u64,
+    pub current_health: u64,
+    pub attack_power: u32,
+    pub active_until: u64,
+    pub defeated: bool,
 }
 
 #[contracterror]
@@ -314,4 +335,195 @@ pub fn get_player_alliance(env: &Env, player: Address) -> Option<u64> {
     env.storage()
         .persistent()
         .get::<AllianceKey, u64>(&AllianceKey::MemberAlliance(player))
+}
+
+// ── Guild Leveling & Perks ──────────────────────────────────────────────────
+
+pub fn get_alliance_level(env: &Env, alliance_id: u64) -> GuildLevelInfo {
+    let key = AllianceKey::AllianceLevelInfo(alliance_id);
+    env.storage()
+        .persistent()
+        .get(&key)
+        .unwrap_or(GuildLevelInfo { level: 1, xp: 0 })
+}
+
+pub fn add_alliance_xp(env: &Env, alliance_id: u64, amount: u64) -> Result<u32, AllianceError> {
+    let key = AllianceKey::AllianceLevelInfo(alliance_id);
+    let mut info = get_alliance_level(env, alliance_id);
+
+    info.xp = info.xp.saturating_add(amount);
+
+    let mut next_lvl_xp = (info.level as u64) * 1000;
+    let mut leveled_up = false;
+    while info.xp >= next_lvl_xp {
+        info.xp = info.xp.saturating_sub(next_lvl_xp);
+        info.level += 1;
+        next_lvl_xp = (info.level as u64) * 1000;
+        leveled_up = true;
+    }
+
+    env.storage().persistent().set(&key, &info);
+
+    if leveled_up {
+        env.events().publish(
+            (symbol_short!("guild"), symbol_short!("level_up")),
+            (alliance_id, info.level),
+        );
+    }
+
+    Ok(info.level)
+}
+
+pub fn credit_alliance_treasury(env: &Env, alliance_id: u64, amount: i128) -> Result<i128, AllianceError> {
+    if amount <= 0 {
+        return Ok(get_alliance_treasury(env, alliance_id));
+    }
+
+    let treasury_key = AllianceKey::AllianceTreasury(alliance_id);
+    let current_treasury = get_alliance_treasury(env, alliance_id);
+
+    let new_treasury = current_treasury.saturating_add(amount);
+    env.storage().persistent().set(&treasury_key, &new_treasury);
+
+    env.events().publish(
+        (symbol_short!("guild"), symbol_short!("credited")),
+        (alliance_id, amount, new_treasury),
+    );
+
+    Ok(new_treasury)
+}
+
+// ── Territory Staking ────────────────────────────────────────────────────────
+
+pub fn claim_guild_territory(
+    env: &Env,
+    player: Address,
+    coordinate_hash: u64,
+) -> Result<(), AllianceError> {
+    player.require_auth();
+
+    let alliance_id = get_player_alliance(env, player.clone())
+        .ok_or(AllianceError::NotMember)?;
+
+    let cost = 500i128;
+    let treasury_key = AllianceKey::AllianceTreasury(alliance_id);
+    let current_treasury = get_alliance_treasury(env, alliance_id);
+
+    if current_treasury < cost {
+        return Err(AllianceError::Unauthorized); // Insufficient funds in treasury
+    }
+
+    let territory_key = AllianceKey::TerritoryClaim(coordinate_hash);
+    if env.storage().persistent().has(&territory_key) {
+        return Err(AllianceError::AlreadyInAlliance); // Already claimed
+    }
+
+    let new_treasury = current_treasury.saturating_sub(cost);
+    env.storage().persistent().set(&treasury_key, &new_treasury);
+
+    env.storage().persistent().set(&territory_key, &alliance_id);
+
+    env.events().publish(
+        (symbol_short!("guild"), symbol_short!("claim")),
+        (alliance_id, coordinate_hash, player),
+    );
+
+    Ok(())
+}
+
+pub fn get_territory_owner(env: &Env, coordinate_hash: u64) -> Option<u64> {
+    let territory_key = AllianceKey::TerritoryClaim(coordinate_hash);
+    env.storage().persistent().get(&territory_key)
+}
+
+// ── Boss Encounters ──────────────────────────────────────────────────────────
+
+pub fn spawn_guild_boss(
+    env: &Env,
+    player: Address,
+) -> Result<(), AllianceError> {
+    player.require_auth();
+
+    let alliance_id = get_player_alliance(env, player.clone())
+        .ok_or(AllianceError::NotMember)?;
+
+    let cost = 1000i128;
+    let treasury_key = AllianceKey::AllianceTreasury(alliance_id);
+    let current_treasury = get_alliance_treasury(env, alliance_id);
+
+    if current_treasury < cost {
+        return Err(AllianceError::Unauthorized);
+    }
+
+    let new_treasury = current_treasury.saturating_sub(cost);
+    env.storage().persistent().set(&treasury_key, &new_treasury);
+
+    let boss_key = AllianceKey::GuildBoss(alliance_id);
+    let active_until = env.ledger().timestamp() + 86400;
+
+    let boss_state = GuildBossState {
+        boss_id: 1,
+        max_health: 10_000,
+        current_health: 10_000,
+        attack_power: 100,
+        active_until,
+        defeated: false,
+    };
+
+    env.storage().persistent().set(&boss_key, &boss_state);
+
+    env.events().publish(
+        (symbol_short!("guild"), symbol_short!("boss_spawn")),
+        (alliance_id, active_until),
+    );
+
+    Ok(())
+}
+
+pub fn attack_guild_boss(
+    env: &Env,
+    player: Address,
+    damage: u64,
+) -> Result<GuildBossState, AllianceError> {
+    player.require_auth();
+
+    let alliance_id = get_player_alliance(env, player.clone())
+        .ok_or(AllianceError::NotMember)?;
+
+    let boss_key = AllianceKey::GuildBoss(alliance_id);
+    let mut boss: GuildBossState = env
+        .storage()
+        .persistent()
+        .get(&boss_key)
+        .ok_or(AllianceError::AllianceNotFound)?;
+
+    if boss.defeated || env.ledger().timestamp() > boss.active_until {
+        return Err(AllianceError::Unauthorized);
+    }
+
+    boss.current_health = boss.current_health.saturating_sub(damage);
+
+    if boss.current_health == 0 {
+        boss.defeated = true;
+        // Payout and Guild XP rewards
+        let _ = credit_alliance_treasury(env, alliance_id, 2000i128);
+        let _ = add_alliance_xp(env, alliance_id, 1500u64);
+
+        // Contribute quest progress
+        let _ = crate::guild_quests::contribute_quest_progress(env, player.clone(), symbol_short!("boss_kill"), 1);
+    }
+
+    env.storage().persistent().set(&boss_key, &boss);
+
+    env.events().publish(
+        (symbol_short!("guild"), symbol_short!("boss_dmg")),
+        (alliance_id, player, damage, boss.current_health),
+    );
+
+    Ok(boss)
+}
+
+pub fn get_guild_boss(env: &Env, alliance_id: u64) -> Option<GuildBossState> {
+    let boss_key = AllianceKey::GuildBoss(alliance_id);
+    env.storage().persistent().get(&boss_key)
 }
