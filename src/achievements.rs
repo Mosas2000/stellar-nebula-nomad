@@ -9,11 +9,13 @@
 /// [`achievement_engine`] handles the low-level storage and unlock logic.
 /// This module builds on top of it to expose:
 ///
-/// - A typed [`AchievementId`] enum for all 20+ catalog entries.
-/// - An extended [`AchievementDef`] struct with category and rarity metadata.
+/// - A typed [`AchievementId`] enum for all 28 catalog entries.
+/// - An extended [`AchievementDef`] struct with category, rarity, and seasonal metadata.
 /// - A leaderboard (top-10 by achievement count).
 /// - Structured achievement-unlocked events.
 /// - A convenience [`try_unlock`] wrapper: unlock + event + leaderboard in one call.
+/// - Seasonal achievement support: 8 new IDs (21–28) with optional expiry and
+///   reset-safe cross-season tracking.
 ///
 /// ## Usage
 ///
@@ -21,8 +23,8 @@
 /// // Check a single achievement's progress
 /// let progress = query_progress(env, &player_addr, AchievementId::Surveyor as u64)?;
 ///
-/// // Unlock an achievement (mints badge, emits event, updates leaderboard)
-/// let badge_id = try_unlock(env, &player_addr, AchievementId::FirstScan as u64)?;
+/// // Unlock a seasonal achievement and bind it to the current season
+/// let badge_id = try_unlock_seasonal(env, &player_addr, AchievementId::SeasonalExplorer as u64, season_id)?;
 ///
 /// // Fetch the top-10 leaderboard
 /// let top = leaderboard_top(env);
@@ -90,6 +92,23 @@ pub enum AchievementId {
     Trailblazer  = 19,
     /// Reach 500 scans + 20 000 essence + 10 ships (rare, combined).
     Legend       = 20,
+    // ── Seasonal achievements (IDs 21–28) ─────────────────────────────────────
+    /// Complete any challenge during your first season (seasonal, repeatable).
+    SeasonDebutant     = 21,
+    /// Participate in 3 different seasons (cross-season accumulator, never resets).
+    SeasonVeteran      = 22,
+    /// Complete all 3 chapters within a single season (seasonal, per-season).
+    ChapterConqueror   = 23,
+    /// Discover the season's exclusive nebula type (seasonal, per-season).
+    SeasonalExplorer   = 24,
+    /// Claim a premium battle pass reward (seasonal, per-season).
+    PremiumPathfinder  = 25,
+    /// Finish in the top 10 of a seasonal leaderboard (seasonal, per-season).
+    EventChampion      = 26,
+    /// Complete 5 time-limited challenges in one season (seasonal, per-season).
+    LimitedLegend      = 27,
+    /// Complete a full 90-day season with all 3 chapters cleared (rare, per-season).
+    GrandNomad         = 28,
 }
 
 // ─── Achievement Definition ───────────────────────────────────────────────────
@@ -107,10 +126,12 @@ pub struct AchievementDef {
     pub title: String,
     /// Human-readable unlock criteria.
     pub description: String,
-    /// Category tag: `"scan"`, `"essence"`, `"fleet"`, or `"combined"`.
+    /// Category tag: `"scan"`, `"essence"`, `"fleet"`, `"combined"`, or `"seasonal"`.
     pub category: Symbol,
     /// `true` for achievements that trigger a celebration animation in the UI.
     pub is_rare: bool,
+    /// `true` for achievements scoped to the current season (IDs 21–28).
+    pub is_seasonal: bool,
     /// Minimum total scans required (0 = not required).
     pub min_scans: u32,
     /// Minimum essence earned required (0 = not required).
@@ -137,6 +158,8 @@ pub struct AchievementProgressEx {
     pub progress_pct: u32,
     /// Whether this is a rare achievement.
     pub is_rare: bool,
+    /// Whether this is a seasonal achievement.
+    pub is_seasonal: bool,
 }
 
 // ─── Leaderboard ─────────────────────────────────────────────────────────────
@@ -149,6 +172,18 @@ pub enum LeaderboardKey {
     PlayerScore(Address),
     /// Sorted top-10 entries list.
     TopEntries,
+}
+
+/// Storage key namespace for seasonal achievement state.
+#[derive(Clone)]
+#[contracttype]
+pub enum SeasonalAchievementKey {
+    /// Per-player, per-season unlock flag: (player, achievement_id, season_id) -> bool
+    SeasonalUnlock(Address, u64, u64),
+    /// Count of challenges completed by a player this season: (player, season_id) -> u32
+    ChallengeCount(Address, u64),
+    /// Whether a player has been in the top 10 leaderboard this season: (player, season_id) -> bool
+    LeaderboardTop10(Address, u64),
 }
 
 /// A single leaderboard entry.
@@ -215,10 +250,66 @@ pub fn query_progress(
         eligible: pct >= 100 && !unlocked,
         progress_pct: pct,
         is_rare: is_rare_achievement(achievement_id),
+        is_seasonal: is_seasonal_achievement(achievement_id),
     })
 }
 
-// ─── Unlock Wrapper ───────────────────────────────────────────────────────────
+/// Return extended progress snapshots for all seasonal achievements (IDs 21–28).
+///
+/// Seasonal achievements are scoped to the current season; the `season_id`
+/// parameter is used to check seasonal unlock records alongside the global flag.
+pub fn query_seasonal_progress(
+    env: &Env,
+    player: &Address,
+    season_id: u64,
+) -> Result<Vec<AchievementProgressEx>, AchievementsError> {
+    let profile =
+        get_profile_by_owner(env, player).map_err(|_| AchievementsError::ProfileNotFound)?;
+    let ships = get_ships_by_owner(env, player);
+    let ship_count = ships.len() as u32;
+
+    let seasonal_ids: [u64; 8] = [21, 22, 23, 24, 25, 26, 27, 28];
+    let mut result = Vec::new(env);
+
+    for &aid in seasonal_ids.iter() {
+        if let Some(template) = env
+            .storage()
+            .persistent()
+            .get::<AchievementKey, AchievementTemplate>(&AchievementKey::Template(aid))
+        {
+            // For cross-season accumulating achievements (SeasonVeteran = 22)
+            // check the global unlock flag; for per-season ones check the seasonal key.
+            let unlocked = if aid == AchievementId::SeasonVeteran as u64 {
+                env.storage()
+                    .persistent()
+                    .has(&AchievementKey::PlayerAchievement(player.clone(), aid))
+            } else {
+                env.storage()
+                    .persistent()
+                    .get::<SeasonalAchievementKey, bool>(
+                        &SeasonalAchievementKey::SeasonalUnlock(player.clone(), aid, season_id),
+                    )
+                    .unwrap_or(false)
+            };
+
+            let pct = compute_pct(&template, profile.total_scans, profile.essence_earned, ship_count);
+
+            result.push_back(AchievementProgressEx {
+                achievement_id: aid,
+                title: template.title,
+                unlocked,
+                eligible: pct >= 100 && !unlocked,
+                progress_pct: pct,
+                is_rare: is_rare_achievement(aid),
+                is_seasonal: true,
+            });
+        }
+    }
+
+    Ok(result)
+}
+
+// ─── Unlock Wrappers ──────────────────────────────────────────────────────────
 
 /// Unlock `achievement_id` for `player`.
 ///
@@ -238,6 +329,183 @@ pub fn try_unlock(
     record_leaderboard_entry(env, player);
     emit_achievement_event(env, player, achievement_id, badge.badge_id);
     Ok(badge.badge_id)
+}
+
+/// Unlock a **seasonal** achievement for `player` and bind the unlock to
+/// `season_id`.
+///
+/// For achievements that are per-season (IDs 21, 23–28) this stores a seasonal
+/// unlock flag so the same achievement can be unlocked again in future seasons.
+/// For `SeasonVeteran` (ID 22) the global unlock path is used because it
+/// accumulates across seasons.
+///
+/// Returns the minted badge ID on success.
+pub fn try_unlock_seasonal(
+    env: &Env,
+    player: &Address,
+    achievement_id: u64,
+    season_id: u64,
+) -> Result<u64, AchievementError> {
+    // SeasonVeteran (22) is a global accumulator, not per-season.
+    if achievement_id == AchievementId::SeasonVeteran as u64 {
+        return try_unlock(env, player, achievement_id);
+    }
+
+    // For per-season achievements, check if already unlocked this season
+    // before calling the engine (which would reject a second global unlock).
+    let seasonal_key =
+        SeasonalAchievementKey::SeasonalUnlock(player.clone(), achievement_id, season_id);
+    let already: bool = env
+        .storage()
+        .persistent()
+        .get(&seasonal_key)
+        .unwrap_or(false);
+
+    if already {
+        return Err(AchievementError::AlreadyUnlocked);
+    }
+
+    // Attempt engine unlock.  For genuinely first-time unlocks the engine mints
+    // the badge; for repeat seasonal unlocks (season 2+) the engine will reject
+    // with AlreadyUnlocked — we catch that and still emit the seasonal event.
+    let badge_id = match unlock_achievement(env, player.clone(), achievement_id) {
+        Ok(badge) => {
+            increment_leaderboard(env, player);
+            record_leaderboard_entry(env, player);
+            badge.badge_id
+        }
+        Err(AchievementError::AlreadyUnlocked) => {
+            // Repeat seasonal unlock: badge already minted in a prior season,
+            // so don't double-increment the global leaderboard.
+            0
+        }
+        Err(e) => return Err(e),
+    };
+
+    // Store seasonal flag so the player can earn this again next season.
+    env.storage().persistent().set(&seasonal_key, &true);
+
+    emit_achievement_event(env, player, achievement_id, badge_id);
+    Ok(badge_id)
+}
+
+// ─── Seasonal State Helpers ────────────────────────────────────────────────────
+
+/// Record that a player completed a challenge this season; auto-unlock
+/// `LimitedLegend` when 5 challenges are completed.
+pub fn record_challenge_completed(
+    env: &Env,
+    player: &Address,
+    season_id: u64,
+) -> Result<(), AchievementError> {
+    let key = SeasonalAchievementKey::ChallengeCount(player.clone(), season_id);
+    let prev: u32 = env.storage().persistent().get(&key).unwrap_or(0);
+    let new_count = prev + 1;
+    env.storage().persistent().set(&key, &new_count);
+
+    if new_count >= 5 {
+        let _ = try_unlock_seasonal(env, player, AchievementId::LimitedLegend as u64, season_id);
+    }
+
+    Ok(())
+}
+
+/// Mark a player as having reached the top-10 leaderboard this season and
+/// auto-unlock `EventChampion`.
+pub fn record_leaderboard_top10(
+    env: &Env,
+    player: &Address,
+    season_id: u64,
+) -> Result<(), AchievementError> {
+    let key = SeasonalAchievementKey::LeaderboardTop10(player.clone(), season_id);
+    env.storage().persistent().set(&key, &true);
+    let _ = try_unlock_seasonal(env, player, AchievementId::EventChampion as u64, season_id);
+    Ok(())
+}
+
+// ─── Reset Seasonal Progress ──────────────────────────────────────────────────
+
+/// Reset per-season progress counters at season rollover.
+///
+/// This erases the challenge completion counter and leaderboard-top-10 flag for
+/// the ended season so they can be earned again in the next season.
+///
+/// **Permanent achievements** (IDs 1–20, `SeasonVeteran`/ID 22) are NOT touched.
+/// Seasonal unlock *badges* are also preserved — players keep what they earned.
+///
+/// `player_ids` should be the list of all participants from the ended season.
+pub fn reset_seasonal_progress(
+    env: &Env,
+    admin: &Address,
+    season_id: u64,
+    player_ids: Vec<Address>,
+) {
+    admin.require_auth();
+
+    for i in 0..player_ids.len() {
+        if let Some(player) = player_ids.get(i) {
+            // Remove per-season challenge count.
+            env.storage()
+                .persistent()
+                .remove(&SeasonalAchievementKey::ChallengeCount(player.clone(), season_id));
+
+            // Remove per-season leaderboard top-10 flag.
+            env.storage()
+                .persistent()
+                .remove(&SeasonalAchievementKey::LeaderboardTop10(player.clone(), season_id));
+        }
+    }
+
+    env.events().publish(
+        (symbol_short!("ach"), symbol_short!("seas_rst")),
+        season_id,
+    );
+}
+
+/// Return the catalog definitions for all 8 seasonal achievements (IDs 21–28).
+///
+/// Since `AchievementDef` is display metadata only (not stored on-chain), this
+/// is a pure computation — no storage reads.
+pub fn get_seasonal_achievements(env: &Env) -> Vec<AchievementDef> {
+    let mut defs = Vec::new(env);
+
+    // Macro-style helper: push an AchievementDef
+    let push = |defs: &mut Vec<AchievementDef>,
+                id: u64,
+                title: &str,
+                description: &str,
+                is_rare: bool| {
+        defs.push_back(AchievementDef {
+            id,
+            title: soroban_sdk::String::from_str(env, title),
+            description: soroban_sdk::String::from_str(env, description),
+            category: symbol_short!("seasonal"),
+            is_rare,
+            is_seasonal: true,
+            min_scans: 0,
+            min_essence: 0,
+            min_ships: 0,
+        });
+    };
+
+    push(&mut defs, 21, "Season Debutant",
+         "Complete any time-limited challenge in your first season.", false);
+    push(&mut defs, 22, "Season Veteran",
+         "Participate in 3 different seasons.", false);
+    push(&mut defs, 23, "Chapter Conqueror",
+         "Complete all 3 chapters within a single season.", false);
+    push(&mut defs, 24, "Seasonal Explorer",
+         "Discover the season's exclusive nebula type.", false);
+    push(&mut defs, 25, "Premium Pathfinder",
+         "Claim a premium battle pass reward.", false);
+    push(&mut defs, 26, "Event Champion",
+         "Finish in the top 10 of a seasonal leaderboard.", false);
+    push(&mut defs, 27, "Limited Legend",
+         "Complete 5 time-limited challenges in one season.", true);
+    push(&mut defs, 28, "Grand Nomad",
+         "Complete a full 90-day season with all 3 chapters cleared.", true);
+
+    defs
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -363,6 +631,11 @@ fn compute_pct(template: &AchievementTemplate, scans: u32, essence: i128, ships:
 
 /// `true` for achievements that deserve a rare-unlock celebration in the UI.
 fn is_rare_achievement(id: u64) -> bool {
-    // Legend = combined milestone; Armada = 20 ships; Trailblazer = 400 scans
-    matches!(id, 18 | 19 | 20)
+    // Legend (20), Armada (18), Trailblazer (19), LimitedLegend (27), GrandNomad (28)
+    matches!(id, 18 | 19 | 20 | 27 | 28)
+}
+
+/// `true` for seasonal achievements (IDs 21–28).
+fn is_seasonal_achievement(id: u64) -> bool {
+    id >= 21 && id <= 28
 }

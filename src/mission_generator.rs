@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 
 const DAILY_MISSION_LIMIT: u32 = 3;
 const MISSION_REWARD_BASE: i128 = 100;
@@ -36,6 +36,10 @@ pub struct Mission {
     pub claimed: bool,
     pub expires_at: u64,
     pub prerequisite_missions: Vec<u64>,
+    pub narrative_tier: Option<Symbol>,
+    pub archetype_tag: Option<Symbol>,
+    pub title: Option<String>,
+    pub description: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -126,6 +130,10 @@ pub fn generate_daily_mission(env: &Env, player: Address) -> Result<Mission, Mis
         claimed: false,
         expires_at,
         prerequisite_missions: prerequisites,
+        narrative_tier: None,
+        archetype_tag: None,
+        title: None,
+        description: None,
     };
 
     env.storage()
@@ -250,4 +258,94 @@ pub fn start_mission(env: &Env, player: Address, mission_id: u64) -> Result<(), 
         }
     }
     Ok(())
+}
+
+pub fn generate_ai_mission(env: &Env, player: Address) -> Result<Mission, MissionError> {
+    player.require_auth();
+
+    let current_day = env.ledger().timestamp() / 86400;
+    let last_reset = env
+        .storage()
+        .persistent()
+        .get::<MissionKey, u64>(&MissionKey::DailyReset(player.clone()))
+        .unwrap_or(0);
+
+    let daily_count = if current_day > last_reset {
+        env.storage()
+            .persistent()
+            .set(&MissionKey::DailyReset(player.clone()), &current_day);
+        0
+    } else {
+        let mut count = 0;
+        for i in 0..DAILY_MISSION_LIMIT {
+            if env
+                .storage()
+                .persistent()
+                .has(&MissionKey::PlayerMission(player.clone(), current_day + (i as u64)))
+            {
+                count += 1;
+            }
+        }
+        count
+    };
+
+    if daily_count >= DAILY_MISSION_LIMIT {
+        return Err(MissionError::DailyLimitReached);
+    }
+
+    let mission_counter = env
+        .storage()
+        .persistent()
+        .get::<MissionKey, u64>(&MissionKey::MissionCounter)
+        .unwrap_or(0) + 1;
+
+    env.storage()
+        .persistent()
+        .set(&MissionKey::MissionCounter, &mission_counter);
+
+    let ledger_seq = env.ledger().sequence();
+    let seed = (ledger_seq as u64)
+        .wrapping_mul(mission_counter)
+        .wrapping_add(env.ledger().timestamp());
+
+    // Generate procedural adaptive mission via AI engine
+    let ai_result = crate::ai_mission_engine::generate_ai_mission_internal(env, player.clone(), seed);
+
+    let expires_at = env.ledger().timestamp() + 86400;
+    
+    let mut prerequisites = Vec::new(env);
+    if mission_counter > 1 {
+        prerequisites.push_back(mission_counter - 1);
+    }
+
+    let mission = Mission {
+        mission_id: mission_counter,
+        player: player.clone(),
+        mission_type: ai_result.mission_type.clone(),
+        target_count: ai_result.target_count,
+        current_progress: 0,
+        reward: ai_result.reward,
+        completed: false,
+        claimed: false,
+        expires_at,
+        prerequisite_missions: prerequisites,
+        narrative_tier: Some(ai_result.narrative_tier.clone()),
+        archetype_tag: Some(ai_result.archetype_tag),
+        title: Some(ai_result.title),
+        description: Some(ai_result.description),
+    };
+
+    env.storage()
+        .persistent()
+        .set(&MissionKey::MissionData(mission_counter), &mission);
+    env.storage()
+        .persistent()
+        .set(&MissionKey::PlayerMission(player.clone(), mission_counter), &true);
+
+    env.events().publish(
+        (symbol_short!("mission"), symbol_short!("ai_gen")),
+        (mission_counter, player, ai_result.mission_type, ai_result.narrative_tier),
+    );
+
+    Ok(mission)
 }
