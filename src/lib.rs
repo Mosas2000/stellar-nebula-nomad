@@ -18,6 +18,7 @@ mod leaderboards;
 mod content_tools;
 mod pvp_combat;
 
+pub mod events;
 mod batch_processor;
 mod dex_integration;
 mod difficulty_scaler;

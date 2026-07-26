@@ -130,9 +130,11 @@ pub const CONTENT_TYPE_EVENT: &str = "event";
 
 pub fn set_admin(env: &Env, admin: &Address) {
     admin.require_auth();
+    let old_admin = get_admin(env);
     env.storage()
         .persistent()
         .set(&ContentDataKey::Admin, admin);
+    env.events().publish(symbol_short!("cnt_admn"), (old_admin, admin.clone()));
 }
 
 fn get_admin(env: &Env) -> Option<Address> {
