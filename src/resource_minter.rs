@@ -9,11 +9,13 @@
 //   • RateLimitHit events are emitted inside check_rate_limit.
 
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, contracterror,
-                   log, symbol_short, Address, Env, String, Symbol};
+use soroban_sdk::{
+    contract, contracterror, contractimpl, contracttype, log, symbol_short, Address, Env, String,
+    Symbol,
+};
 
+use crate::nebula_gen::{NebulaError as NebulaGenError, NebulaGen};
 use crate::rate_limiter::{check_rate_limit, Operation, RateLimitError};
-use crate::nebula_gen::{NebulaGen, NebulaError as NebulaGenError};
 
 pub type AssetId = ResourceType;
 
@@ -43,10 +45,10 @@ pub enum ResourceType {
 #[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResourceRecord {
-    pub owner:         Address,
+    pub owner: Address,
     pub resource_type: ResourceType,
-    pub amount:        u64,
-    pub minted_at:     u64,
+    pub amount: u64,
+    pub minted_at: u64,
 }
 
 #[contracttype]
@@ -61,13 +63,15 @@ pub enum MinterKey {
 #[repr(u32)]
 pub enum MinterError {
     /// Amount must be > 0.
-    InvalidAmount       = 200,
+    InvalidAmount = 200,
     /// Caller exceeded the minting rate limit (DoS prevention).
-    RateLimitExceeded   = 201,
+    RateLimitExceeded = 201,
     /// No nebula layout found for this ship (must scan first).
-    NoLayoutForShip     = 202,
+    NoLayoutForShip = 202,
     /// The specified anomaly index does not contain a resource.
     NoResourceAtAnomaly = 203,
+    /// A checked arithmetic operation overflowed (Issue #239).
+    ArithmeticOverflow = 204,
 }
 
 impl From<RateLimitError> for MinterError {
@@ -82,24 +86,22 @@ pub struct ResourceMinterContract;
 
 #[contractimpl]
 impl ResourceMinterContract {
-
     /// Mint `amount` units of `resource_type` for `caller`.
     ///
     /// Rate-limited to prevent spam (Issue #175).
     pub fn mint_resource(
-        env:           &Env,
-        caller:        Address,
-        ship_id:       u64,
+        env: &Env,
+        caller: Address,
+        ship_id: u64,
         anomaly_index: u32,
         resource_type: ResourceType,
-        amount:        u64,
+        amount: u64,
     ) -> Result<ResourceRecord, MinterError> {
         // ── Auth ───────────────────────────────────────────────
         caller.require_auth();
 
         // ── Rate limit check (Issue #175) ──────────────────────
-        check_rate_limit(env, &caller, Operation::ResourceMinting)
-            .map_err(MinterError::from)?;
+        check_rate_limit(env, &caller, Operation::ResourceMinting).map_err(MinterError::from)?;
 
         // ── Basic validation ───────────────────────────────────
         if amount == 0 {
@@ -107,27 +109,32 @@ impl ResourceMinterContract {
         }
 
         // ── Confirm anomaly exists for this ship ───────────────
-        NebulaGen::has_anomaly(env.clone(), ship_id, anomaly_index)
-            .map_err(|e| match e {
-                NebulaGenError::LayoutNotFound    => MinterError::NoLayoutForShip,
-                NebulaGenError::AnomalyOutOfBounds => MinterError::NoResourceAtAnomaly,
-                _ => MinterError::NoLayoutForShip,
-            })?;
+        NebulaGen::has_anomaly(env.clone(), ship_id, anomaly_index).map_err(|e| match e {
+            NebulaGenError::LayoutNotFound => MinterError::NoLayoutForShip,
+            NebulaGenError::AnomalyOutOfBounds => MinterError::NoResourceAtAnomaly,
+            _ => MinterError::NoLayoutForShip,
+        })?;
 
-        // ── Update balances ────────────────────────────────────
+        // ── Update balances (checked: Issue #239) ──────────────
         let balance_key = MinterKey::Balance(caller.clone(), resource_type.clone());
         let current: u64 = env.storage().persistent().get(&balance_key).unwrap_or(0);
-        env.storage().persistent().set(&balance_key, &(current + amount));
+        let new_balance = current
+            .checked_add(amount)
+            .ok_or(MinterError::ArithmeticOverflow)?;
+        env.storage().persistent().set(&balance_key, &new_balance);
 
         let supply_key = MinterKey::TotalSupply(resource_type.clone());
         let supply: u64 = env.storage().persistent().get(&supply_key).unwrap_or(0);
-        env.storage().persistent().set(&supply_key, &(supply + amount));
+        let new_supply = supply
+            .checked_add(amount)
+            .ok_or(MinterError::ArithmeticOverflow)?;
+        env.storage().persistent().set(&supply_key, &new_supply);
 
         let record = ResourceRecord {
-            owner:         caller.clone(),
+            owner: caller.clone(),
             resource_type: resource_type.clone(),
             amount,
-            minted_at:     env.ledger().timestamp(),
+            minted_at: env.ledger().timestamp(),
         };
 
         // ── Emit event ─────────────────────────────────────────
@@ -140,11 +147,7 @@ impl ResourceMinterContract {
     }
 
     /// Query the balance of `owner` for `resource_type`.
-    pub fn balance(
-        env:           &Env,
-        owner:         Address,
-        resource_type: ResourceType,
-    ) -> u64 {
+    pub fn balance(env: &Env, owner: Address, resource_type: ResourceType) -> u64 {
         env.storage()
             .persistent()
             .get(&MinterKey::Balance(owner, resource_type))
@@ -174,19 +177,50 @@ mod tests {
         env
     }
 
+    // ── Arithmetic safety (Issue #239) ──────────────────────────
+    //
+    // `mint_resource` credits balances via `current.checked_add(amount)`
+    // (see above). These property tests pin down that operation's
+    // overflow behavior directly, independent of the full mint flow.
+    mod arithmetic_safety {
+        use proptest::prelude::*;
+
+        proptest! {
+            #[test]
+            fn checked_credit_never_wraps(current in any::<u64>(), amount in any::<u64>()) {
+                match current.checked_add(amount) {
+                    Some(sum) => {
+                        prop_assert!(sum >= current);
+                        prop_assert!(sum >= amount);
+                    }
+                    None => {
+                        // Only reports overflow when the true (unbounded) sum
+                        // would actually exceed u64::MAX — never a false positive.
+                        prop_assert!(current as u128 + amount as u128 > u64::MAX as u128);
+                    }
+                }
+            }
+        }
+
+        #[test]
+        fn checked_credit_detects_overflow_at_max_balance() {
+            assert_eq!(u64::MAX.checked_add(1), None);
+            assert_eq!((u64::MAX - 1).checked_add(1), Some(u64::MAX));
+        }
+    }
+
     #[test]
     fn test_mint_zero_amount_rejected() {
-        let env    = make_env();
+        let env = make_env();
         let caller = Address::generate(&env);
-        let result = ResourceMinterContract::mint_resource(
-            &env, caller, 1, 0, ResourceType::StellarDust, 0,
-        );
+        let result =
+            ResourceMinterContract::mint_resource(&env, caller, 1, 0, ResourceType::StellarDust, 0);
         assert_eq!(result, Err(MinterError::InvalidAmount));
     }
 
     #[test]
     fn test_rate_limit_enforced_on_minting() {
-        let env    = make_env();
+        let env = make_env();
         let caller = Address::generate(&env);
 
         // Use up the default ResourceMinting limit (10 / 60 s)
@@ -194,11 +228,21 @@ mod tests {
         // but RateLimitExceeded must fire on the 11th.
         for _ in 0..10 {
             let _ = ResourceMinterContract::mint_resource(
-                &env, caller.clone(), 1, 0, ResourceType::StellarDust, 1,
+                &env,
+                caller.clone(),
+                1,
+                0,
+                ResourceType::StellarDust,
+                1,
             );
         }
         let result = ResourceMinterContract::mint_resource(
-            &env, caller.clone(), 1, 0, ResourceType::StellarDust, 1,
+            &env,
+            caller.clone(),
+            1,
+            0,
+            ResourceType::StellarDust,
+            1,
         );
         assert_eq!(result, Err(MinterError::RateLimitExceeded));
     }

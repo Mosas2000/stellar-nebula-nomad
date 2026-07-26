@@ -1,4 +1,6 @@
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Vec, Symbol, Map};
+use soroban_sdk::{
+    contracterror, contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec,
+};
 
 // Symbol::to_string() is implemented for non-wasm targets only (requires std::string::String).
 #[cfg(not(target_family = "wasm"))]
@@ -26,6 +28,8 @@ pub enum LeaderboardError {
     LeaderboardFull = 6,
     /// Reset is not yet due.
     ResetNotDue = 7,
+    /// Admin has already been set; set_admin is a one-time initializer (Issue #237).
+    AlreadyInitialized = 8,
 }
 
 // ── Storage Keys ──────────────────────────────────────────────────────────────
@@ -143,17 +147,22 @@ pub const REGION_OCEANIA: &str = "oceania";
 
 // ── Admin Functions ──────────────────────────────────────────────────────────
 
-pub fn set_admin(env: &Env, admin: &Address) {
+/// Bootstrap the leaderboard admin. Callable exactly once — subsequent calls
+/// return `AlreadyInitialized` instead of letting any caller overwrite the
+/// admin (Issue #237: this previously let anyone re-appoint themselves).
+pub fn set_admin(env: &Env, admin: &Address) -> Result<(), LeaderboardError> {
     admin.require_auth();
+    if get_admin(env).is_some() {
+        return Err(LeaderboardError::AlreadyInitialized);
+    }
     env.storage()
         .persistent()
         .set(&LeaderboardDataKey::Admin, admin);
+    Ok(())
 }
 
 fn get_admin(env: &Env) -> Option<Address> {
-    env.storage()
-        .persistent()
-        .get(&LeaderboardDataKey::Admin)
+    env.storage().persistent().get(&LeaderboardDataKey::Admin)
 }
 
 fn require_admin(env: &Env, caller: &Address) -> Result<(), LeaderboardError> {
@@ -504,7 +513,12 @@ pub fn distribute_rewards(
             if reward > 0 {
                 env.events().publish(
                     (symbol_short!("lb"), symbol_short!("reward")),
-                    (entry.player.clone(), reward, category.clone(), time_period.clone()),
+                    (
+                        entry.player.clone(),
+                        reward,
+                        category.clone(),
+                        time_period.clone(),
+                    ),
                 );
             }
         }
@@ -542,7 +556,8 @@ pub fn reset_leaderboard(
         .get(&board_key)
         .unwrap_or_else(|| Vec::new(env));
 
-    let archive_key = LeaderboardDataKey::Archive(category.clone(), time_period.clone(), current_season);
+    let archive_key =
+        LeaderboardDataKey::Archive(category.clone(), time_period.clone(), current_season);
     env.storage().persistent().set(&archive_key, &entries);
 
     // Clear the live board
@@ -551,14 +566,16 @@ pub fn reset_leaderboard(
 
     // Bump season
     let new_season = current_season + 1;
-    env.storage()
-        .persistent()
-        .set(&LeaderboardDataKey::Season(category.clone(), time_period.clone()), &new_season);
+    env.storage().persistent().set(
+        &LeaderboardDataKey::Season(category.clone(), time_period.clone()),
+        &new_season,
+    );
 
     // Record reset timestamp
-    env.storage()
-        .persistent()
-        .set(&LeaderboardDataKey::LastReset(category.clone(), time_period.clone()), &env.ledger().timestamp());
+    env.storage().persistent().set(
+        &LeaderboardDataKey::LastReset(category.clone(), time_period.clone()),
+        &env.ledger().timestamp(),
+    );
 
     env.events().publish(
         (symbol_short!("lb"), symbol_short!("reset")),
@@ -616,7 +633,10 @@ pub fn reset_if_due(
     let last_reset: Option<u64> = env
         .storage()
         .persistent()
-        .get(&LeaderboardDataKey::LastReset(category.clone(), time_period.clone()));
+        .get(&LeaderboardDataKey::LastReset(
+            category.clone(),
+            time_period.clone(),
+        ));
 
     let due = match last_reset {
         None => true,
@@ -870,13 +890,41 @@ mod tests {
     }
 
     #[test]
+    fn test_set_admin_cannot_be_hijacked_after_init() {
+        // Issue #237: set_admin previously let ANY caller overwrite the
+        // admin at any time (it only required the *new* admin's own
+        // signature, never the existing admin's). Now it is a one-time
+        // initializer.
+        let (env, _contract_id) = make_env();
+        let admin = Address::generate(&env);
+        let attacker = Address::generate(&env);
+
+        env.as_contract(&_contract_id, || {
+            set_admin(&env, &admin).unwrap();
+
+            let result = set_admin(&env, &attacker);
+            assert_eq!(result, Err(LeaderboardError::AlreadyInitialized));
+
+            // Attacker still cannot perform admin-gated actions.
+            let result = reset_leaderboard(
+                &env,
+                &attacker,
+                Symbol::new(&env, CATEGORY_ESSENCE),
+                Symbol::new(&env, PERIOD_WEEKLY),
+            );
+            assert_eq!(result, Err(LeaderboardError::Unauthorized));
+        });
+    }
+
+    #[test]
     fn test_guild_leaderboard() {
         let (env, _contract_id) = make_env();
         let admin = Address::generate(&env);
 
         env.as_contract(&_contract_id, || {
-            set_admin(&env, &admin);
-            update_guild_score(&env, &admin, String::from_str(&env, "Test Guild"), 1000, 10).unwrap();
+            set_admin(&env, &admin).unwrap();
+            update_guild_score(&env, &admin, String::from_str(&env, "Test Guild"), 1000, 10)
+                .unwrap();
             let board = get_guild_leaderboard(&env, 10);
             assert_eq!(board.len(), 1);
         });
@@ -905,7 +953,7 @@ mod tests {
 
         env.mock_all_auths();
         env.as_contract(&contract_id, || {
-            set_admin(&env, &admin);
+            set_admin(&env, &admin).unwrap();
             update_score(&env, &player, category.clone(), period.clone(), 500).unwrap();
 
             // Confirm live board has 1 entry
@@ -913,7 +961,8 @@ mod tests {
             assert_eq!(board.len(), 1);
 
             // Reset; season 1 → 2
-            let new_season = reset_leaderboard(&env, &admin, category.clone(), period.clone()).unwrap();
+            let new_season =
+                reset_leaderboard(&env, &admin, category.clone(), period.clone()).unwrap();
             assert_eq!(new_season, 2);
 
             // Live board is empty
@@ -921,7 +970,8 @@ mod tests {
             assert_eq!(board.len(), 0);
 
             // Season 1 archive has the entry
-            let archived = get_archived_leaderboard(&env, category.clone(), period.clone(), 1, 10).unwrap();
+            let archived =
+                get_archived_leaderboard(&env, category.clone(), period.clone(), 1, 10).unwrap();
             assert_eq!(archived.len(), 1);
             assert_eq!(archived.get(0).unwrap().score, 500);
         });
@@ -937,17 +987,19 @@ mod tests {
 
         env.mock_all_auths();
         env.as_contract(&contract_id, || {
-            set_admin(&env, &admin);
+            set_admin(&env, &admin).unwrap();
             update_score(&env, &player, category.clone(), period.clone(), 200).unwrap();
             reset_leaderboard(&env, &admin, category.clone(), period.clone()).unwrap();
 
             // Season 1 archive has the entry
-            let archived = get_archived_leaderboard(&env, category.clone(), period.clone(), 1, 10).unwrap();
+            let archived =
+                get_archived_leaderboard(&env, category.clone(), period.clone(), 1, 10).unwrap();
             assert_eq!(archived.len(), 1);
             assert_eq!(archived.get(0).unwrap().score, 200);
 
             // Season 2 archive is empty (no reset happened yet for season 2)
-            let empty = get_archived_leaderboard(&env, category.clone(), period.clone(), 2, 10).unwrap();
+            let empty =
+                get_archived_leaderboard(&env, category.clone(), period.clone(), 2, 10).unwrap();
             assert_eq!(empty.len(), 0);
         });
     }
@@ -961,12 +1013,18 @@ mod tests {
 
         env.mock_all_auths();
         env.as_contract(&contract_id, || {
-            set_admin(&env, &admin);
+            set_admin(&env, &admin).unwrap();
             // Default season is 1
-            assert_eq!(get_current_season(&env, category.clone(), period.clone()), 1);
+            assert_eq!(
+                get_current_season(&env, category.clone(), period.clone()),
+                1
+            );
             // After reset, season becomes 2
             reset_leaderboard(&env, &admin, category.clone(), period.clone()).unwrap();
-            assert_eq!(get_current_season(&env, category.clone(), period.clone()), 2);
+            assert_eq!(
+                get_current_season(&env, category.clone(), period.clone()),
+                2
+            );
         });
     }
 
@@ -985,11 +1043,14 @@ mod tests {
         });
 
         env.as_contract(&contract_id, || {
-            set_admin(&env, &admin);
+            set_admin(&env, &admin).unwrap();
 
             // First call: no LastReset → treat as due → resets → true
             let result = reset_if_due(&env, &admin, category.clone(), period.clone()).unwrap();
-            assert!(result, "initial reset_if_due should return true (no LastReset)");
+            assert!(
+                result,
+                "initial reset_if_due should return true (no LastReset)"
+            );
 
             // LastReset is now 1000; advance to just before the weekly duration elapses
             env.ledger().with_mut(|li| {
@@ -997,7 +1058,10 @@ mod tests {
             });
 
             let result = reset_if_due(&env, &admin, category.clone(), period.clone()).unwrap();
-            assert!(!result, "reset_if_due should be false before duration elapses");
+            assert!(
+                !result,
+                "reset_if_due should be false before duration elapses"
+            );
 
             // Advance past the weekly duration
             env.ledger().with_mut(|li| {

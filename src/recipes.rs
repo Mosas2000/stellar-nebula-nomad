@@ -25,12 +25,26 @@ pub struct Recipe {
     pub required_level: u32,
 }
 
+/// Crafting skill specialization a recipe can belong to (Issue #266).
+///
+/// Recipes are not required to belong to a specialization — only recipes
+/// tagged via [`set_recipe_specialization`] gate on the player's chosen tree.
+#[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Specialization {
+    Metallurgy,
+    Alchemy,
+    Engineering,
+}
+
 // ── Storage Keys ──────────────────────────────────────────────────────────────
 
 #[contracttype]
 pub enum RecipeKey {
     Recipe(u32),
     PlayerRareUnlocked(Address, u32),
+    /// Specialization a recipe is tagged with, if any (Issue #266).
+    RecipeSpecialization(u32),
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -67,4 +81,59 @@ pub fn unlock_rare_recipe(env: &Env, player: Address, recipe_id: u32) {
     env.storage()
         .instance()
         .set(&RecipeKey::PlayerRareUnlocked(player, recipe_id), &true);
+}
+
+/// Tag a recipe as belonging to a crafting specialization tree (Issue #266).
+///
+/// Untagged recipes remain craftable by anyone regardless of specialization.
+pub fn set_recipe_specialization(env: &Env, recipe_id: u32, specialization: Specialization) {
+    env.storage()
+        .instance()
+        .set(&RecipeKey::RecipeSpecialization(recipe_id), &specialization);
+}
+
+/// The specialization a recipe is tagged with, if any.
+pub fn get_recipe_specialization(env: &Env, recipe_id: u32) -> Option<Specialization> {
+    env.storage()
+        .instance()
+        .get(&RecipeKey::RecipeSpecialization(recipe_id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{contract, contractimpl};
+
+    #[contract]
+    struct Stub;
+    #[contractimpl]
+    impl Stub {}
+
+    fn make_env() -> (Env, soroban_sdk::Address) {
+        let env = Env::default();
+        let id = env.register(Stub, ());
+        (env, id)
+    }
+
+    #[test]
+    fn test_recipe_specialization_defaults_to_none() {
+        let (env, id) = make_env();
+        env.as_contract(&id, || {
+            assert_eq!(get_recipe_specialization(&env, 1), None);
+        });
+    }
+
+    #[test]
+    fn test_set_and_get_recipe_specialization() {
+        let (env, id) = make_env();
+        env.as_contract(&id, || {
+            set_recipe_specialization(&env, 1, Specialization::Alchemy);
+            assert_eq!(
+                get_recipe_specialization(&env, 1),
+                Some(Specialization::Alchemy)
+            );
+            // Untagged recipes are unaffected.
+            assert_eq!(get_recipe_specialization(&env, 2), None);
+        });
+    }
 }

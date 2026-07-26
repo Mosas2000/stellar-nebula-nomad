@@ -351,8 +351,13 @@ pub use trading::{
     MAX_SLIPPAGE_BPS, AMM_MAX_ROUTE_HOPS, SWAP_FEE_BPS,
 };
 
-pub use crafting::{craft, add_xp, get_level, get_xp};
-pub use recipes::{RecipeError, set_recipe, unlock_rare_recipe};
+pub use crafting::{
+    craft, add_xp, get_level, get_xp, CraftingError,
+    // Skill trees (Issue #266)
+    choose_specialization, get_specialization, get_skill_points,
+    unlock_skill_node, is_node_unlocked, get_mastery_count,
+};
+pub use recipes::{RecipeError, Specialization, set_recipe, set_recipe_specialization, unlock_rare_recipe};
 pub use nomad_bonding::{
     BondError, BondStatus, NomadBond, YieldDelegation,
     create_bond, accept_bond, delegate_yield, claim_yield, dissolve_bond,
@@ -579,8 +584,8 @@ impl NebulaNomadContract {
         leaderboards::distribute_rewards(&env, &caller, category, time_period, rewards)
     }
 
-    /// Set leaderboard admin (admin only).
-    pub fn set_leaderboard_admin(env: Env, admin: Address) {
+    /// Set leaderboard admin (one-time initializer).
+    pub fn set_leaderboard_admin(env: Env, admin: Address) -> Result<(), LeaderboardError> {
         leaderboards::set_admin(&env, &admin)
     }
 
@@ -706,8 +711,8 @@ impl NebulaNomadContract {
         content_tools::get_marketplace_listing(&env, listing_id)
     }
 
-    /// Set content tools admin (admin only).
-    pub fn set_content_admin(env: Env, admin: Address) {
+    /// Set content tools admin (one-time initializer).
+    pub fn set_content_admin(env: Env, admin: Address) -> Result<(), ContentToolsError> {
         content_tools::set_admin(&env, &admin)
     }
 
@@ -934,8 +939,8 @@ impl NebulaNomadContract {
         pvp_combat::get_rewards_config(&env)
     }
 
-    /// Set PvP combat admin (admin only).
-    pub fn set_pvp_admin(env: Env, admin: Address) {
+    /// Set PvP combat admin (one-time initializer).
+    pub fn set_pvp_admin(env: Env, admin: Address) -> Result<(), PvPError> {
         pvp_combat::set_admin(&env, &admin)
     }
 

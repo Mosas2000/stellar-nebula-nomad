@@ -75,8 +75,11 @@ pub fn record_scan(env: &Env, player: &Address, essence: u64) {
         .persistent()
         .get(&AnalyticsDataKey::GlobalStats)
         .unwrap_or_default();
-    stats.total_scans += 1;
-    stats.total_essence_accrued += essence;
+    // Non-critical, display-only counters: clamp on overflow rather than
+    // panicking so a dashboard aggregate can never brick scan recording
+    // (Issue #239 — saturating arithmetic for non-financial accumulators).
+    stats.total_scans = stats.total_scans.saturating_add(1);
+    stats.total_essence_accrued = stats.total_essence_accrued.saturating_add(essence);
     env.storage()
         .persistent()
         .set(&AnalyticsDataKey::GlobalStats, &stats);
@@ -87,9 +90,10 @@ pub fn record_scan(env: &Env, player: &Address, essence: u64) {
         .persistent()
         .get(&AnalyticsDataKey::PlayerEssence(player.clone()))
         .unwrap_or(0);
-    env.storage()
-        .persistent()
-        .set(&AnalyticsDataKey::PlayerEssence(player.clone()), &(prev + essence));
+    env.storage().persistent().set(
+        &AnalyticsDataKey::PlayerEssence(player.clone()),
+        &prev.saturating_add(essence),
+    );
 
     // Ensure the player appears in the leaderboard candidate list.
     register_player(env, player);
@@ -104,7 +108,7 @@ pub fn record_ship_minted(env: &Env) {
         .persistent()
         .get(&AnalyticsDataKey::GlobalStats)
         .unwrap_or_default();
-    stats.ships_minted += 1;
+    stats.ships_minted = stats.ships_minted.saturating_add(1);
     env.storage()
         .persistent()
         .set(&AnalyticsDataKey::GlobalStats, &stats);
@@ -322,6 +326,30 @@ mod tests {
         let env = Env::default();
         let id = env.register_contract(None, Stub);
         (env, id)
+    }
+
+    #[test]
+    fn test_record_scan_clamps_instead_of_panicking_at_max() {
+        let (env, contract_id) = make_env();
+        let player = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            env.storage().persistent().set(
+                &AnalyticsDataKey::GlobalStats,
+                &GlobalStats {
+                    total_scans: u64::MAX,
+                    ships_minted: 0,
+                    total_essence_accrued: u64::MAX,
+                },
+            );
+
+            // Must not panic even though the accumulators are already at u64::MAX.
+            record_scan(&env, &player, 100);
+
+            let stats = get_global_stats(&env);
+            assert_eq!(stats.total_scans, u64::MAX);
+            assert_eq!(stats.total_essence_accrued, u64::MAX);
+        });
     }
 
     #[test]

@@ -1,5 +1,7 @@
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env};
 
+use crate::reentrancy_guard::{with_guard, ReentrancyError};
+
 /// ── Errors ────────────────────────────────────────────────────────────────
 ///
 /// Yield delegation moves financial value between bonded players, so every
@@ -33,6 +35,14 @@ pub enum BondError {
     NotBondParty = 11,
     /// A checked arithmetic operation overflowed.
     ArithmeticOverflow = 12,
+    /// A guarded section was re-entered (Issue #238).
+    Reentrancy = 13,
+}
+
+impl From<ReentrancyError> for BondError {
+    fn from(_: ReentrancyError) -> Self {
+        BondError::Reentrancy
+    }
 }
 
 /// ── Storage Keys ──────────────────────────────────────────────────────────
@@ -96,7 +106,9 @@ fn next_bond_id(env: &Env) -> Result<u64, BondError> {
         .instance()
         .get(&DataKey::BondCounter)
         .unwrap_or(0);
-    let next = current.checked_add(1).ok_or(BondError::ArithmeticOverflow)?;
+    let next = current
+        .checked_add(1)
+        .ok_or(BondError::ArithmeticOverflow)?;
     env.storage().instance().set(&DataKey::BondCounter, &next);
     Ok(next)
 }
@@ -108,9 +120,7 @@ fn next_bond_id(env: &Env) -> Result<u64, BondError> {
 /// surface [`BondError::ArithmeticOverflow`] instead of panicking. Kept as a
 /// standalone, side-effect-free function so it can be property-tested directly.
 fn calculate_yield_amount(balance: u64, percentage: u32) -> Option<u64> {
-    balance
-        .checked_mul(percentage as u64)?
-        .checked_div(100)
+    balance.checked_mul(percentage as u64)?.checked_div(100)
 }
 
 /// ── create_bond ───────────────────────────────────────────────────────────
@@ -303,83 +313,89 @@ pub fn accrue_essence(env: &Env, player: &Address, amount: u64) -> Result<(), Bo
 /// * [`BondError::NoDelegation`] if no delegation is configured for the bond.
 /// * [`BondError::NotBeneficiary`] if the caller is not the beneficiary.
 /// * [`BondError::ArithmeticOverflow`] if any balance calculation overflows.
+/// # Security
+/// * Holds a reentrancy guard across the debit/credit sequence so a
+///   malicious `require_auth` callback (e.g. a custom-account contract)
+///   cannot re-enter `claim_yield` mid-transfer (Issue #238).
 pub fn claim_yield(env: &Env, claimer: &Address, bond_id: u64) -> Result<u64, BondError> {
     claimer.require_auth();
 
-    let bond: NomadBond = env
-        .storage()
-        .instance()
-        .get(&DataKey::Bond(bond_id))
-        .ok_or(BondError::BondNotFound)?;
+    with_guard(env, || {
+        let bond: NomadBond = env
+            .storage()
+            .instance()
+            .get(&DataKey::Bond(bond_id))
+            .ok_or(BondError::BondNotFound)?;
 
-    if bond.status != BondStatus::Active {
-        return Err(BondError::BondNotActive);
-    }
+        if bond.status != BondStatus::Active {
+            return Err(BondError::BondNotActive);
+        }
 
-    let mut delegation: YieldDelegation = env
-        .storage()
-        .instance()
-        .get(&DataKey::YieldDel(bond_id))
-        .ok_or(BondError::NoDelegation)?;
+        let mut delegation: YieldDelegation = env
+            .storage()
+            .instance()
+            .get(&DataKey::YieldDel(bond_id))
+            .ok_or(BondError::NoDelegation)?;
 
-    if *claimer != delegation.beneficiary {
-        return Err(BondError::NotBeneficiary);
-    }
+        if *claimer != delegation.beneficiary {
+            return Err(BondError::NotBeneficiary);
+        }
 
-    let delegator_balance: u64 = env
-        .storage()
-        .instance()
-        .get(&DataKey::Essence(delegation.delegator.clone()))
-        .unwrap_or(0);
+        let delegator_balance: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Essence(delegation.delegator.clone()))
+            .unwrap_or(0);
 
-    if delegator_balance == 0 {
-        return Ok(0);
-    }
+        if delegator_balance == 0 {
+            return Ok(0);
+        }
 
-    // Checked: balance * percentage / 100 cannot overflow silently.
-    let yield_amount = calculate_yield_amount(delegator_balance, delegation.percentage)
-        .ok_or(BondError::ArithmeticOverflow)?;
+        // Checked: balance * percentage / 100 cannot overflow silently.
+        let yield_amount = calculate_yield_amount(delegator_balance, delegation.percentage)
+            .ok_or(BondError::ArithmeticOverflow)?;
 
-    if yield_amount == 0 {
-        return Ok(0);
-    }
+        if yield_amount == 0 {
+            return Ok(0);
+        }
 
-    // Debit delegator (checked: yield_amount <= delegator_balance, but verified).
-    let new_delegator_balance = delegator_balance
-        .checked_sub(yield_amount)
-        .ok_or(BondError::ArithmeticOverflow)?;
-    env.storage().instance().set(
-        &DataKey::Essence(delegation.delegator.clone()),
-        &new_delegator_balance,
-    );
+        // Debit delegator (checked: yield_amount <= delegator_balance, but verified).
+        let new_delegator_balance = delegator_balance
+            .checked_sub(yield_amount)
+            .ok_or(BondError::ArithmeticOverflow)?;
+        env.storage().instance().set(
+            &DataKey::Essence(delegation.delegator.clone()),
+            &new_delegator_balance,
+        );
 
-    // Credit beneficiary (checked add).
-    let claimer_balance: u64 = env
-        .storage()
-        .instance()
-        .get(&DataKey::Essence(claimer.clone()))
-        .unwrap_or(0);
-    let new_claimer_balance = claimer_balance
-        .checked_add(yield_amount)
-        .ok_or(BondError::ArithmeticOverflow)?;
-    env.storage()
-        .instance()
-        .set(&DataKey::Essence(claimer.clone()), &new_claimer_balance);
+        // Credit beneficiary (checked add).
+        let claimer_balance: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::Essence(claimer.clone()))
+            .unwrap_or(0);
+        let new_claimer_balance = claimer_balance
+            .checked_add(yield_amount)
+            .ok_or(BondError::ArithmeticOverflow)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::Essence(claimer.clone()), &new_claimer_balance);
 
-    delegation.total_yielded = delegation
-        .total_yielded
-        .checked_add(yield_amount)
-        .ok_or(BondError::ArithmeticOverflow)?;
-    env.storage()
-        .instance()
-        .set(&DataKey::YieldDel(bond_id), &delegation);
+        delegation.total_yielded = delegation
+            .total_yielded
+            .checked_add(yield_amount)
+            .ok_or(BondError::ArithmeticOverflow)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::YieldDel(bond_id), &delegation);
 
-    env.events().publish(
-        (symbol_short!("yield"), symbol_short!("claimed")),
-        (bond_id, claimer.clone(), yield_amount),
-    );
+        env.events().publish(
+            (symbol_short!("yield"), symbol_short!("claimed")),
+            (bond_id, claimer.clone(), yield_amount),
+        );
 
-    Ok(yield_amount)
+        Ok(yield_amount)
+    })
 }
 
 /// ── dissolve_bond ─────────────────────────────────────────────────────────
@@ -513,7 +529,7 @@ mod tests {
     }
 
     // ── Storage & auth tests ──────────────────────────────────────────────────
-    use soroban_sdk::{testutils::Address as _, contract, contractimpl};
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _};
 
     #[contract]
     struct Stub;
@@ -563,8 +579,8 @@ mod tests {
         env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            let bond = create_bond(&env, &initiator, 1, &partner)
-                .expect("create_bond should succeed");
+            let bond =
+                create_bond(&env, &initiator, 1, &partner).expect("create_bond should succeed");
 
             assert_eq!(bond.initiator, initiator);
             assert_eq!(bond.partner, partner);
@@ -596,8 +612,8 @@ mod tests {
         env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            let bond = create_bond(&env, &initiator, 1, &partner)
-                .expect("create_bond should succeed");
+            let bond =
+                create_bond(&env, &initiator, 1, &partner).expect("create_bond should succeed");
 
             let result = accept_bond(&env, &stranger, bond.bond_id);
             assert_eq!(result, Err(BondError::NotDesignatedPartner));
@@ -614,8 +630,8 @@ mod tests {
         env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            let bond = create_bond(&env, &initiator, 1, &partner)
-                .expect("create_bond should succeed");
+            let bond =
+                create_bond(&env, &initiator, 1, &partner).expect("create_bond should succeed");
             let _ = accept_bond(&env, &partner, bond.bond_id);
 
             let result = dissolve_bond(&env, &stranger, bond.bond_id);
@@ -632,8 +648,8 @@ mod tests {
         env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            let bond = create_bond(&env, &initiator, 1, &partner)
-                .expect("create_bond should succeed");
+            let bond =
+                create_bond(&env, &initiator, 1, &partner).expect("create_bond should succeed");
             let _ = accept_bond(&env, &partner, bond.bond_id);
 
             let result = claim_yield(&env, &partner, bond.bond_id);
@@ -650,8 +666,8 @@ mod tests {
         env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            let bond = create_bond(&env, &initiator, 1, &partner)
-                .expect("create_bond should succeed");
+            let bond =
+                create_bond(&env, &initiator, 1, &partner).expect("create_bond should succeed");
             let _ = accept_bond(&env, &partner, bond.bond_id);
 
             let result = delegate_yield(&env, &initiator, bond.bond_id, 0);
@@ -659,6 +675,36 @@ mod tests {
 
             let result = delegate_yield(&env, &initiator, bond.bond_id, 101);
             assert_eq!(result, Err(BondError::InvalidPercentage));
+        });
+    }
+
+    #[test]
+    fn test_claim_yield_rejected_while_guard_held() {
+        // Simulates a reentrant callback (e.g. a malicious require_auth
+        // callback) attempting to re-enter claim_yield while a prior
+        // invocation's guard is still held (Issue #238).
+        let (env, contract_id) = make_env();
+        let initiator = Address::generate(&env);
+        let partner = Address::generate(&env);
+
+        env.mock_all_auths();
+
+        env.as_contract(&contract_id, || {
+            let bond =
+                create_bond(&env, &initiator, 1, &partner).expect("create_bond should succeed");
+            let _ = accept_bond(&env, &partner, bond.bond_id);
+            let _ = delegate_yield(&env, &initiator, bond.bond_id, 50);
+            let _ = accrue_essence(&env, &initiator, 1000);
+
+            crate::reentrancy_guard::acquire(&env).expect("lock should be free");
+            let result = claim_yield(&env, &partner, bond.bond_id);
+            assert_eq!(result, Err(BondError::Reentrancy));
+            crate::reentrancy_guard::release(&env);
+
+            // Once released, the call succeeds normally.
+            let amount = claim_yield(&env, &partner, bond.bond_id)
+                .expect("claim_yield should succeed once unlocked");
+            assert_eq!(amount, 500);
         });
     }
 
@@ -671,12 +717,12 @@ mod tests {
         env.mock_all_auths();
 
         env.as_contract(&contract_id, || {
-            let bond = create_bond(&env, &initiator, 1, &partner)
-                .expect("create_bond should succeed");
+            let bond =
+                create_bond(&env, &initiator, 1, &partner).expect("create_bond should succeed");
             assert_eq!(bond.status, BondStatus::Pending);
 
-            let bond = accept_bond(&env, &partner, bond.bond_id)
-                .expect("accept_bond should succeed");
+            let bond =
+                accept_bond(&env, &partner, bond.bond_id).expect("accept_bond should succeed");
             assert_eq!(bond.status, BondStatus::Active);
 
             let delegation = delegate_yield(&env, &initiator, bond.bond_id, 50)
@@ -684,11 +730,10 @@ mod tests {
             assert_eq!(delegation.percentage, 50);
             assert_eq!(delegation.beneficiary, partner);
 
-            let _ = accrue_essence(&env, &initiator, 1000)
-                .expect("accrue_essence should succeed");
+            let _ = accrue_essence(&env, &initiator, 1000).expect("accrue_essence should succeed");
 
-            let amount = claim_yield(&env, &partner, bond.bond_id)
-                .expect("claim_yield should succeed");
+            let amount =
+                claim_yield(&env, &partner, bond.bond_id).expect("claim_yield should succeed");
             assert_eq!(amount, 500);
 
             let bond = dissolve_bond(&env, &initiator, bond.bond_id)
