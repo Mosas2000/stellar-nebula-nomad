@@ -2,6 +2,8 @@ use soroban_sdk::{
     contracterror, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec,
 };
 
+use crate::rate_limiter;
+
 /// Maximum number of commitments allowed per transaction.
 pub const MAX_COMMITMENTS_PER_TX: u32 = 10;
 
@@ -175,6 +177,9 @@ pub fn commit_private_stat(
     value: i128,
 ) -> Result<BytesN<32>, PrivacyError> {
     player.require_auth();
+
+    rate_limiter::check_rate_limit(env, &player, rate_limiter::Operation::PrivacyCommit)
+        .map_err(|_| PrivacyError::BurstLimitExceeded)?;
     
     // Check opt-in status
     if !is_opted_in(env, &player) {
