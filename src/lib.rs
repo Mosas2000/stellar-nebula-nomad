@@ -2,6 +2,8 @@
 
 use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, String, Symbol, Vec, symbol_short};
 
+use crate::nebula_explorer::{NebulaLayout, Rarity};
+
 mod access_control;
 mod analytics;
 mod blueprint_factory;
@@ -115,7 +117,7 @@ pub use nebula_gen::{
     NebulaError as NebulaGenError, Anomaly, AnomalyType, NebulaLayout as NebulaGenLayout,
     ResourceClass,
 };
-pub use resource_minter::{MinterError, ResourceRecord, ResourceType};
+pub use resource_minter::{AssetId, MinterError, ResourceKey, ResourceRecord, ResourceType};
 pub use ship_nft::{ShipError, ShipNft};
 pub use blueprint_factory::{Blueprint, BlueprintError, BlueprintRarity};
 pub use referral_system::{Referral, ReferralError};
@@ -400,7 +402,7 @@ impl NebulaNomadContract {
     pub fn snapshot_leaderboard(
         env: Env,
         top_n: u32,
-    ) -> Result<Vec<LeaderboardEntry>, AnalyticsError> {
+    ) -> Result<Vec<analytics::LeaderboardEntry>, AnalyticsError> {
         analytics::snapshot_leaderboard(&env, top_n)
     }
 
@@ -1116,11 +1118,11 @@ impl NebulaNomadContract {
         env: Env,
         player: Address,
         ship_id: u64,
-        layout: NebulaLayout,
+        _layout: (),
         resource: Symbol,
         min_price: i128,
-    ) -> Result<(HarvestResult, DexOffer), HarvestError> {
-        dex_integration::harvest_and_list(&env, &player, ship_id, &layout, &resource, min_price)
+    ) -> Result<(dex_integration::HarvestResult, dex_integration::DexOffer), dex_integration::HarvestError> {
+        dex_integration::harvest_and_list(&env, &player, ship_id, &_layout, &resource, min_price)
     }
 
     /// Cancel an active DEX listing.
@@ -1128,7 +1130,7 @@ impl NebulaNomadContract {
         env: Env,
         owner: Address,
         offer_id: u64,
-    ) -> Result<DexOffer, HarvestError> {
+    ) -> Result<dex_integration::DexOffer, dex_integration::HarvestError> {
         dex_integration::cancel_listing(&env, &owner, offer_id)
     }
 

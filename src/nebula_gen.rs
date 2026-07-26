@@ -282,11 +282,11 @@ impl NebulaGen {
 
         // ── Input validation (Issue #170) ─────────────────────
         if ship_id < MIN_SHIP_ID {
-            log!(env, "NebulaGen: invalid ship_id={}", ship_id);
+            log!(&env, "NebulaGen: invalid ship_id={}", ship_id);
             return Err(NebulaError::InvalidShipId);
         }
         if region_id < 1 || region_id > MAX_REGION_ID {
-            log!(env, "NebulaGen: invalid region_id={}", region_id);
+            log!(&env, "NebulaGen: invalid region_id={}", region_id);
             return Err(NebulaError::InvalidRegionId);
         }
         // Seed must not be all-zero
@@ -354,7 +354,7 @@ impl NebulaGen {
             (ship_id, layout_hash, size),
         );
 
-        log!(env, "NebulaGen: generated layout ship_id={} region_id={} size={}",
+        log!(&env, "NebulaGen: generated layout ship_id={} region_id={} size={}",
              ship_id, region_id, size);
 
         Ok(layout)

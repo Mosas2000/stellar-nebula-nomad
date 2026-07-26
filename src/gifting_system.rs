@@ -1,4 +1,4 @@
-use crate::resource_minter::{AssetId, ResourceKey};
+use crate::resource_minter::{AssetId, ResourceKey, resource_type_to_symbol};
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env};
 
 /// Gift expiry: ~48 hours at 5-second ledger close time.
@@ -97,7 +97,7 @@ pub fn send_gift(
 
     increment_sender_burst(env, &sender)?;
 
-    let balance_key = ResourceKey::ResourceBalance(sender.clone(), resource.clone());
+    let balance_key = ResourceKey::ResourceBalance(sender.clone(), resource_type_to_symbol(&resource));
     let balance: u32 = env.storage().instance().get(&balance_key).unwrap_or(0);
     if (balance as i128) < amount {
         return Err(GiftError::InsufficientBalance);
@@ -154,7 +154,7 @@ pub fn accept_gift(env: &Env, receiver: Address, gift_id: u64) -> Result<(), Gif
         return Err(GiftError::GiftExpired);
     }
 
-    let balance_key = ResourceKey::ResourceBalance(receiver.clone(), gift.resource.clone());
+    let balance_key = ResourceKey::ResourceBalance(receiver.clone(), resource_type_to_symbol(&gift.resource));
     let balance: u32 = env.storage().instance().get(&balance_key).unwrap_or(0);
     env.storage()
         .instance()

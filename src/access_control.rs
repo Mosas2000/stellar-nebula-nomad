@@ -478,7 +478,7 @@ pub fn grant_role_batch(
     expiry: Option<u32>,
 ) -> Result<(), AccessControlError> {
     // Check batch size FIRST before any other operation
-    if grantees.len() > BATCH_GRANT_LIMIT {
+    if grantees.len() as usize > BATCH_GRANT_LIMIT {
         return Err(AccessControlError::BatchLimitExceeded);
     }
 

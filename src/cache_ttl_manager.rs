@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Bytes, Env, Symbol, Vec};
 
 // ─── Cache TTL Management System ────────────────────────────────────────────
 //
@@ -70,7 +70,7 @@ pub enum CacheTTLError {
 pub struct CachedData {
     pub namespace: Symbol,
     pub key: Symbol,
-    pub value: Vec<u8>,
+    pub value: Bytes,
     pub cached_at: u64,
     pub ttl_seconds: u64,
     pub is_valid: bool,
@@ -103,7 +103,7 @@ pub fn cache_with_ttl(
     env: &Env,
     namespace: Symbol,
     key: Symbol,
-    value: Vec<u8>,
+    value: Bytes,
     ttl_seconds: u64,
 ) -> Result<(), CacheTTLError> {
     if ttl_seconds == 0 {
@@ -121,7 +121,7 @@ pub fn cache_with_ttl(
 
     env.storage()
         .persistent()
-        .set(&CacheKey::CacheEntry(namespace, key.clone()), &cached);
+        .set(&CacheKey::CacheEntry(namespace.clone(), key.clone()), &cached);
 
     env.storage()
         .instance()
@@ -140,7 +140,7 @@ pub fn get_cached_with_ttl(
     env: &Env,
     namespace: Symbol,
     key: Symbol,
-) -> Result<Vec<u8>, CacheTTLError> {
+) -> Result<Bytes, CacheTTLError> {
     let cached: Option<CachedData> = env
         .storage()
         .persistent()

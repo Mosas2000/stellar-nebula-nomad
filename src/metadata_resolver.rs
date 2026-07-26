@@ -1,4 +1,4 @@
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Bytes, Env, Vec};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Bytes, Env, String, Vec};
 
 /// Maximum number of tokens in a single batch resolve call.
 ///

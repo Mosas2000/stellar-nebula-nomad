@@ -400,13 +400,13 @@ pub fn damage_ship(env: &Env, ship_id: u64, amount: u32) -> Result<ShipNft, Ship
     let mut ship: ShipNft = env.storage().persistent().get(&key).ok_or(ShipError::ShipNotFound)?;
 
     let old_durability = ship.durability;
+    let owner = ship.owner.clone();
     ship.durability = ship.durability.saturating_sub(amount);
     env.storage().persistent().set(&key, &ship);
 
     env.events().publish(
         (symbol_short!("ship_dmg"), ship_id, owner.clone()),
-        old_durability,
-        ship.durability,
+        (old_durability, ship.durability),
     );
 
     Ok(ship)

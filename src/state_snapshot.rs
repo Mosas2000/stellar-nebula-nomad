@@ -558,7 +558,7 @@ pub fn export_state(
         compression: true,
         size_bytes: 0, // Would be set by off-chain service
         checksum,
-        storage_uri,
+        storage_uri: storage_uri.clone(),
         created_at: now,
     };
 
@@ -666,16 +666,10 @@ fn compute_backup_hash(
 
 /// Compute checksum for exported state.
 fn compute_export_checksum(env: &Env, backup_id: u64, storage_uri: &Symbol) -> BytesN<32> {
-    let uri_bytes = storage_uri.to_string();
-    let mut payload = [0u8; 32];
-    payload[0..8].copy_from_slice(&backup_id.to_be_bytes());
-    
-    // Use first 24 bytes of URI string
-    let uri_str = uri_bytes.as_bytes();
-    let copy_len = uri_str.len().min(24);
-    payload[8..8 + copy_len].copy_from_slice(&uri_str[..copy_len]);
+    let mut data = soroban_sdk::Bytes::new(env);
+    data.append(&soroban_sdk::Bytes::from_slice(env, &backup_id.to_be_bytes()));
 
     env.crypto()
-        .sha256(&soroban_sdk::Bytes::from_array(env, &payload))
+        .sha256(&data)
         .to_bytes()
 }
