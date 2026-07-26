@@ -1,5 +1,7 @@
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Vec};
 
+use crate::input_validation;
+
 // Alliance configuration constants
 pub const MAX_MEMBERS_PER_ALLIANCE: u32 = 50;
 pub const MIN_VOTING_THRESHOLD: u32 = 51; // 51% for decisions
@@ -78,6 +80,9 @@ pub fn found_alliance(
 ) -> Result<u64, AllianceError> {
     founder.require_auth();
     
+    input_validation::validate_name(env, &name)
+        .map_err(|_| AllianceError::InvalidName)?;
+
     // Check if founder is already in an alliance
     if env.storage().persistent().has(&AllianceKey::MemberAlliance(founder.clone())) {
         return Err(AllianceError::AlreadyInAlliance);
@@ -473,7 +478,7 @@ pub fn spawn_guild_boss(
     env.storage().persistent().set(&boss_key, &boss_state);
 
     env.events().publish(
-        (symbol_short!("guild"), symbol_short!("boss_spawn")),
+        (symbol_short!("guild"), symbol_short!("boss_spn")),
         (alliance_id, active_until),
     );
 
