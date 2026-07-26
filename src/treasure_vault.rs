@@ -32,6 +32,8 @@ pub enum VaultError {
     AlreadyClaimed = 4,
     /// Deposit amount must be positive.
     InvalidAmount = 5,
+    /// A checked arithmetic operation overflowed (Issue #239).
+    ArithmeticOverflow = 6,
 }
 
 /// A time-locked treasure vault.
@@ -47,15 +49,27 @@ pub struct TreasureVault {
     pub claimed: bool,
 }
 
-fn next_vault_id(env: &Env) -> u64 {
+fn next_vault_id(env: &Env) -> Result<u64, VaultError> {
     let current: u64 = env
         .storage()
         .instance()
         .get(&VaultKey::VaultCounter)
         .unwrap_or(0);
-    let next = current + 1;
+    let next = current
+        .checked_add(1)
+        .ok_or(VaultError::ArithmeticOverflow)?;
     env.storage().instance().set(&VaultKey::VaultCounter, &next);
-    next
+    Ok(next)
+}
+
+/// Bonus yield for a claimed vault: `amount * bonus_multiplier / BPS_DENOM`,
+/// computed with checked arithmetic so an extreme `amount` reports overflow
+/// instead of silently wrapping (Issue #239).
+fn calculate_bonus_payout(amount: u64, bonus_multiplier: u64) -> Option<u64> {
+    let bonus = amount
+        .checked_mul(bonus_multiplier)?
+        .checked_div(BPS_DENOM)?;
+    amount.checked_add(bonus)
 }
 
 fn get_min_lock_duration(env: &Env) -> u64 {
@@ -83,8 +97,12 @@ pub fn deposit_treasure(
     }
 
     let min_lock = get_min_lock_duration(env);
-    let lock_until = env.ledger().timestamp() + min_lock;
-    let vault_id = next_vault_id(env);
+    let lock_until = env
+        .ledger()
+        .timestamp()
+        .checked_add(min_lock)
+        .ok_or(VaultError::ArithmeticOverflow)?;
+    let vault_id = next_vault_id(env)?;
 
     let vault = TreasureVault {
         vault_id,
@@ -135,9 +153,9 @@ pub fn claim_treasure(env: &Env, owner: &Address, vault_id: u64) -> Result<u64, 
         return Err(VaultError::StillLocked);
     }
 
-    // Calculate bonus yield
-    let bonus = vault.amount * vault.bonus_multiplier / BPS_DENOM;
-    let total_payout = vault.amount + bonus;
+    // Calculate bonus yield (checked: Issue #239)
+    let total_payout = calculate_bonus_payout(vault.amount, vault.bonus_multiplier)
+        .ok_or(VaultError::ArithmeticOverflow)?;
 
     vault.claimed = true;
     env.storage()
@@ -164,4 +182,76 @@ pub fn set_min_lock_duration(env: &Env, duration: u64) {
     env.storage()
         .instance()
         .set(&VaultKey::MinLockDuration, &duration);
+}
+
+// ── Tests (Issue #239: arithmetic safety) ───────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use proptest::prelude::*;
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _};
+
+    #[contract]
+    struct Stub;
+    #[contractimpl]
+    impl Stub {}
+
+    fn make_env() -> (Env, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(Stub, ());
+        (env, contract_id)
+    }
+
+    #[test]
+    fn test_calculate_bonus_payout_matches_default_bonus() {
+        // BONUS_BPS = 1_000 (10%): 100 + 10% = 110.
+        assert_eq!(calculate_bonus_payout(100, BONUS_BPS), Some(110));
+    }
+
+    #[test]
+    fn test_calculate_bonus_payout_overflow_reported_not_wrapped() {
+        assert_eq!(calculate_bonus_payout(u64::MAX, BONUS_BPS), None);
+    }
+
+    proptest! {
+        /// The payout is always >= the original amount for any non-overflowing
+        /// input, and the helper never panics across the full u64 domain.
+        #[test]
+        fn bonus_payout_never_below_principal(amount in 0u64..=(u64::MAX / 10_000)) {
+            if let Some(payout) = calculate_bonus_payout(amount, BONUS_BPS) {
+                prop_assert!(payout >= amount);
+            }
+        }
+
+        #[test]
+        fn bonus_payout_never_panics(amount in any::<u64>(), multiplier in any::<u64>()) {
+            let _ = calculate_bonus_payout(amount, multiplier);
+        }
+    }
+
+    #[test]
+    fn test_deposit_then_claim_before_unlock_is_still_locked() {
+        let (env, contract_id) = make_env();
+        let owner = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let vault = deposit_treasure(&env, &owner, 1, 500).unwrap();
+            let result = claim_treasure(&env, &owner, vault.vault_id);
+            assert_eq!(result, Err(VaultError::StillLocked));
+        });
+    }
+
+    #[test]
+    fn test_vault_ids_increment_safely() {
+        let (env, contract_id) = make_env();
+        let owner = Address::generate(&env);
+
+        env.as_contract(&contract_id, || {
+            let v1 = deposit_treasure(&env, &owner, 1, 100).unwrap();
+            let v2 = deposit_treasure(&env, &owner, 1, 100).unwrap();
+            assert_eq!(v2.vault_id, v1.vault_id + 1);
+        });
+    }
 }

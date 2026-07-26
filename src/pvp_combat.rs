@@ -1,4 +1,6 @@
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Vec, Symbol, Map, BytesN};
+use soroban_sdk::{
+    contracterror, contracttype, symbol_short, Address, BytesN, Env, Map, String, Symbol, Vec,
+};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -30,6 +32,8 @@ pub enum PvPError {
     NotInQueue = 11,
     /// Spectator limit reached.
     SpectatorLimitReached = 12,
+    /// Admin has already been set; set_admin is a one-time initializer (Issue #237).
+    AlreadyInitialized = 13,
 }
 
 // ── Storage Keys ──────────────────────────────────────────────────────────────
@@ -186,22 +190,24 @@ pub const ELO_DECAY_FLOOR: u32 = 1000;
 
 // ── Admin Functions ──────────────────────────────────────────────────────────
 
-pub fn set_admin(env: &Env, admin: &Address) {
+/// Bootstrap the PvP combat admin. Callable exactly once — subsequent calls
+/// return `AlreadyInitialized` instead of letting any caller overwrite the
+/// admin (Issue #237: this previously let anyone re-appoint themselves).
+pub fn set_admin(env: &Env, admin: &Address) -> Result<(), PvPError> {
     admin.require_auth();
-    let old_admin: Option<Address> = env.storage().persistent().get(&PvPDataKey::Admin);
-    env.storage()
-        .persistent()
-        .set(&PvPDataKey::Admin, admin);
+    if get_admin(env).is_some() {
+        return Err(PvPError::AlreadyInitialized);
+    }
+    env.storage().persistent().set(&PvPDataKey::Admin, admin);
     env.events().publish(
         (symbol_short!("pvp"), symbol_short!("admin_set")),
-        (old_admin, admin.clone()),
+        (Option::<Address>::None, admin.clone()),
     );
+    Ok(())
 }
 
 fn get_admin(env: &Env) -> Option<Address> {
-    env.storage()
-        .persistent()
-        .get(&PvPDataKey::Admin)
+    env.storage().persistent().get(&PvPDataKey::Admin)
 }
 
 fn require_admin(env: &Env, caller: &Address) -> Result<(), PvPError> {
@@ -217,28 +223,22 @@ fn require_admin(env: &Env, caller: &Address) -> Result<(), PvPError> {
 
 pub fn get_or_init_stats(env: &Env, player: &Address) -> CombatStats {
     let key = PvPDataKey::PlayerStats(player.clone());
-    let stats = env.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(CombatStats {
-            wins: 0,
-            losses: 0,
-            draws: 0,
-            total_damage_dealt: 0,
-            total_damage_received: 0,
-            elo_rating: INITIAL_ELO,
-            combat_count: 0,
-        });
+    let stats = env.storage().persistent().get(&key).unwrap_or(CombatStats {
+        wins: 0,
+        losses: 0,
+        draws: 0,
+        total_damage_dealt: 0,
+        total_damage_received: 0,
+        elo_rating: INITIAL_ELO,
+        combat_count: 0,
+    });
 
     // Apply ELO decay on any access
     apply_elo_decay(env, player);
     update_last_active(env, player);
 
     // Re-read after decay may have modified ELO
-    env.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(stats)
+    env.storage().persistent().get(&key).unwrap_or(stats)
 }
 
 pub fn update_stats(env: &Env, player: &Address, stats: &CombatStats) {
@@ -258,10 +258,7 @@ pub fn get_combat_stats(env: &Env, player: &Address) -> CombatStats {
 
 pub fn get_elo_rating(env: &Env, player: &Address) -> u32 {
     let key = PvPDataKey::EloRating(player.clone());
-    env.storage()
-        .persistent()
-        .get(&key)
-        .unwrap_or(INITIAL_ELO)
+    env.storage().persistent().get(&key).unwrap_or(INITIAL_ELO)
 }
 
 pub fn update_elo_rating(env: &Env, player: &Address, new_rating: u32) {
@@ -275,8 +272,10 @@ pub fn update_elo_rating(env: &Env, player: &Address, new_rating: u32) {
 }
 
 fn calculate_elo_change(winner_rating: u32, loser_rating: u32) -> (u32, u32) {
-    let expected_winner = 1.0 / (1.0 + 10.0_f64.powf((loser_rating as f64 - winner_rating as f64) / 400.0));
-    let expected_loser = 1.0 / (1.0 + 10.0_f64.powf((winner_rating as f64 - loser_rating as f64) / 400.0));
+    let expected_winner =
+        1.0 / (1.0 + 10.0_f64.powf((loser_rating as f64 - winner_rating as f64) / 400.0));
+    let expected_loser =
+        1.0 / (1.0 + 10.0_f64.powf((winner_rating as f64 - loser_rating as f64) / 400.0));
 
     let winner_change = (K_FACTOR as f64 * (1.0 - expected_winner)).round() as u32;
     let loser_change = (K_FACTOR as f64 * (0.0 - expected_loser)).round().abs() as u32;
@@ -290,9 +289,7 @@ fn calculate_elo_change(winner_rating: u32, loser_rating: u32) -> (u32, u32) {
 pub fn update_last_active(env: &Env, player: &Address) {
     let key = PvPDataKey::LastActive(player.clone());
     let timestamp = env.ledger().timestamp();
-    env.storage()
-        .persistent()
-        .set(&key, &timestamp);
+    env.storage().persistent().set(&key, &timestamp);
     env.events().publish(
         (symbol_short!("pvp"), symbol_short!("last_act")),
         (player.clone(), timestamp),
@@ -317,7 +314,12 @@ pub fn set_elo_decay_config(
         .set(&PvPDataKey::EloDecayConfig, &config);
     env.events().publish(
         (symbol_short!("pvp"), symbol_short!("elo_cfg")),
-        (caller.clone(), config.inactivity_secs, config.decay_points, config.floor),
+        (
+            caller.clone(),
+            config.inactivity_secs,
+            config.decay_points,
+            config.floor,
+        ),
     );
     Ok(())
 }
@@ -354,8 +356,7 @@ pub fn apply_elo_decay(env: &Env, player: &Address) -> u32 {
 
     // Calculate how many full decay periods have elapsed
     let periods = inactive_duration / config.inactivity_secs;
-    let total_decay = (config.decay_points as u64)
-        .saturating_mul(periods as u64) as u32;
+    let total_decay = (config.decay_points as u64).saturating_mul(periods as u64) as u32;
 
     let current_elo = get_elo_rating(env, player);
     let new_elo = current_elo.saturating_sub(total_decay).max(config.floor);
@@ -447,11 +448,7 @@ pub fn create_challenge(
     Ok(challenge_id)
 }
 
-pub fn accept_challenge(
-    env: &Env,
-    caller: &Address,
-    challenge_id: u64,
-) -> Result<u64, PvPError> {
+pub fn accept_challenge(env: &Env, caller: &Address, challenge_id: u64) -> Result<u64, PvPError> {
     caller.require_auth();
 
     let key = PvPDataKey::Challenge(challenge_id);
@@ -487,11 +484,7 @@ pub fn accept_challenge(
     start_combat(env, &challenge.challenger, caller, challenge_id)
 }
 
-pub fn decline_challenge(
-    env: &Env,
-    caller: &Address,
-    challenge_id: u64,
-) -> Result<(), PvPError> {
+pub fn decline_challenge(env: &Env, caller: &Address, challenge_id: u64) -> Result<(), PvPError> {
     caller.require_auth();
 
     let key = PvPDataKey::Challenge(challenge_id);
@@ -546,7 +539,11 @@ pub fn start_combat(
     // Determine first turn randomly
     let now = env.ledger().timestamp();
     let seed = now % 2;
-    let turn = if seed == 0 { player1.clone() } else { player2.clone() };
+    let turn = if seed == 0 {
+        player1.clone()
+    } else {
+        player2.clone()
+    };
 
     let combat = CombatState {
         combat_id,
@@ -785,11 +782,7 @@ fn end_combat(env: &Env, combat: &mut CombatState) -> Result<(), PvPError> {
 
 fn record_combat_history(env: &Env, player: &Address, history: &CombatHistory) {
     let counter_key = PvPDataKey::CombatHistoryCounter(player.clone());
-    let counter: u64 = env
-        .storage()
-        .persistent()
-        .get(&counter_key)
-        .unwrap_or(0);
+    let counter: u64 = env.storage().persistent().get(&counter_key).unwrap_or(0);
 
     let history_key = PvPDataKey::CombatHistory(player.clone(), counter);
     env.storage().persistent().set(&history_key, history);
@@ -807,14 +800,14 @@ pub fn get_combat(env: &Env, combat_id: u64) -> Result<CombatState, PvPError> {
 
 pub fn get_player_combat_history(env: &Env, player: &Address, limit: u32) -> Vec<CombatHistory> {
     let counter_key = PvPDataKey::CombatHistoryCounter(player.clone());
-    let counter: u64 = env
-        .storage()
-        .persistent()
-        .get(&counter_key)
-        .unwrap_or(0);
+    let counter: u64 = env.storage().persistent().get(&counter_key).unwrap_or(0);
 
     let mut history = Vec::new(env);
-    let start = if counter > limit as u64 { counter - limit as u64 } else { 0 };
+    let start = if counter > limit as u64 {
+        counter - limit as u64
+    } else {
+        0
+    };
 
     for i in start..counter {
         let key = PvPDataKey::CombatHistory(player.clone(), i);
@@ -878,10 +871,7 @@ pub fn join_matchmaking(
     Ok(())
 }
 
-pub fn leave_matchmaking(
-    env: &Env,
-    player: &Address,
-) -> Result<(), PvPError> {
+pub fn leave_matchmaking(env: &Env, player: &Address) -> Result<(), PvPError> {
     player.require_auth();
 
     let key = PvPDataKey::MatchmakingQueue;
@@ -960,11 +950,7 @@ pub fn get_matchmaking_queue_size(env: &Env) -> u32 {
 
 // ── Spectator Mode ────────────────────────────────────────────────────────
 
-pub fn add_spectator(
-    env: &Env,
-    spectator: &Address,
-    combat_id: u64,
-) -> Result<(), PvPError> {
+pub fn add_spectator(env: &Env, spectator: &Address, combat_id: u64) -> Result<(), PvPError> {
     spectator.require_auth();
 
     let combat_key = PvPDataKey::Combat(combat_id);
@@ -979,14 +965,14 @@ pub fn add_spectator(
     }
 
     let spec_key = PvPDataKey::Spectators(combat_id);
-    let mut info: SpectatorInfo = env
-        .storage()
-        .persistent()
-        .get(&spec_key)
-        .unwrap_or(SpectatorInfo {
-            spectators: Vec::new(env),
-            max_spectators: MAX_SPECTATORS,
-        });
+    let mut info: SpectatorInfo =
+        env.storage()
+            .persistent()
+            .get(&spec_key)
+            .unwrap_or(SpectatorInfo {
+                spectators: Vec::new(env),
+                max_spectators: MAX_SPECTATORS,
+            });
 
     if info.spectators.len() >= info.max_spectators {
         return Err(PvPError::SpectatorLimitReached);
@@ -1012,11 +998,7 @@ pub fn add_spectator(
     Ok(())
 }
 
-pub fn remove_spectator(
-    env: &Env,
-    spectator: &Address,
-    combat_id: u64,
-) -> Result<(), PvPError> {
+pub fn remove_spectator(env: &Env, spectator: &Address, combat_id: u64) -> Result<(), PvPError> {
     spectator.require_auth();
 
     let spec_key = PvPDataKey::Spectators(combat_id);
@@ -1149,7 +1131,14 @@ mod tests {
             let combat = get_combat(&env, combat_id).unwrap();
             let first_player = combat.turn.clone();
 
-            execute_move(&env, &first_player, combat_id, Symbol::new(&env, "attack"), 10).unwrap();
+            execute_move(
+                &env,
+                &first_player,
+                combat_id,
+                Symbol::new(&env, "attack"),
+                10,
+            )
+            .unwrap();
 
             let updated = get_combat(&env, combat_id).unwrap();
             assert!(updated.player2_hp < 100 || updated.player1_hp < 100);
@@ -1171,6 +1160,34 @@ mod tests {
 
             let matched = process_matchmaking(&env).unwrap();
             assert!(matched.is_some());
+        });
+    }
+
+    #[test]
+    fn test_set_admin_cannot_be_hijacked_after_init() {
+        // Issue #237: set_admin previously let ANY caller overwrite the
+        // admin at any time. Now it is a one-time initializer.
+        let (env, _contract_id) = make_env();
+        let admin = Address::generate(&env);
+        let attacker = Address::generate(&env);
+
+        env.as_contract(&_contract_id, || {
+            set_admin(&env, &admin).unwrap();
+
+            let result = set_admin(&env, &attacker);
+            assert_eq!(result, Err(PvPError::AlreadyInitialized));
+
+            let result = set_rewards_config(
+                &env,
+                &attacker,
+                RewardsConfig {
+                    base_reward: 999,
+                    win_bonus: 999,
+                    elo_bonus_multiplier: 1,
+                    streak_bonus: 0,
+                },
+            );
+            assert_eq!(result, Err(PvPError::Unauthorized));
         });
     }
 }

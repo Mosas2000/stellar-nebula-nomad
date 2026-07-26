@@ -5,7 +5,9 @@
 //! Stop-loss orders are modelled as sell-side limit orders and executed
 //! by an off-chain keeper that calls `cancel_limit_order` + market sell.
 
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec, Map};
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Map, Symbol, Vec};
+
+use crate::reentrancy_guard::{with_guard, ReentrancyError};
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -150,11 +152,7 @@ pub fn place_limit_order(
 }
 
 /// Cancel an open limit order (owner only). Emits `OrderCancelled`.
-pub fn cancel_limit_order(
-    env: &Env,
-    trader: &Address,
-    order_id: u64,
-) -> Result<(), TradingError> {
+pub fn cancel_limit_order(env: &Env, trader: &Address, order_id: u64) -> Result<(), TradingError> {
     trader.require_auth();
 
     let order: LimitOrder = env
@@ -220,11 +218,7 @@ pub fn get_trader_orders(env: &Env, trader: &Address) -> Vec<LimitOrder> {
 }
 
 /// Record a completed trade in the history ring buffer. Emits `TradeExecuted`.
-pub fn record_trade(
-    env: &Env,
-    caller: &Address,
-    trade: TradeRecord,
-) -> Result<(), TradingError> {
+pub fn record_trade(env: &Env, caller: &Address, trade: TradeRecord) -> Result<(), TradingError> {
     caller.require_auth();
 
     let mut history: Vec<TradeRecord> = env
@@ -302,6 +296,14 @@ pub enum AmmError {
     InvalidRoute = 105,
     InsufficientLpTokens = 106,
     ZeroLiquidity = 107,
+    /// A guarded section was re-entered (Issue #238).
+    Reentrancy = 108,
+}
+
+impl From<ReentrancyError> for AmmError {
+    fn from(_: ReentrancyError) -> Self {
+        AmmError::Reentrancy
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -338,9 +340,7 @@ fn next_pool_id(env: &Env) -> u64 {
         .instance()
         .get(&AmmKey::PoolCounter)
         .unwrap_or(0);
-    env.storage()
-        .instance()
-        .set(&AmmKey::PoolCounter, &(n + 1));
+    env.storage().instance().set(&AmmKey::PoolCounter, &(n + 1));
     n + 1
 }
 
@@ -380,7 +380,11 @@ fn calculate_lp_mint(
     } else {
         let share_a = amount_a * total_supply / reserve_a;
         let share_b = amount_b * total_supply / reserve_b;
-        if share_a < share_b { share_a } else { share_b }
+        if share_a < share_b {
+            share_a
+        } else {
+            share_b
+        }
     }
 }
 
@@ -409,7 +413,11 @@ pub fn create_pool(
 
     for i in 0..pools.len() {
         if let Some(pid) = pools.get(i) {
-            if let Some(pool) = env.storage().persistent().get::<_, LiquidityPool>(&AmmKey::Pool(pid)) {
+            if let Some(pool) = env
+                .storage()
+                .persistent()
+                .get::<_, LiquidityPool>(&AmmKey::Pool(pid))
+            {
                 if (pool.resource_a == resource_a && pool.resource_b == resource_b)
                     || (pool.resource_a == resource_b && pool.resource_b == resource_a)
                 {
@@ -482,9 +490,18 @@ pub fn add_liquidity(
     }
 
     // Update reserves
-    pool.reserve_a = pool.reserve_a.checked_add(amount_a).ok_or(AmmError::InvalidAmount)?;
-    pool.reserve_b = pool.reserve_b.checked_add(amount_b).ok_or(AmmError::InvalidAmount)?;
-    pool.lp_total_supply = pool.lp_total_supply.checked_add(lp_mint).ok_or(AmmError::InvalidAmount)?;
+    pool.reserve_a = pool
+        .reserve_a
+        .checked_add(amount_a)
+        .ok_or(AmmError::InvalidAmount)?;
+    pool.reserve_b = pool
+        .reserve_b
+        .checked_add(amount_b)
+        .ok_or(AmmError::InvalidAmount)?;
+    pool.lp_total_supply = pool
+        .lp_total_supply
+        .checked_add(lp_mint)
+        .ok_or(AmmError::InvalidAmount)?;
 
     env.storage().persistent().set(&key, &pool);
 
@@ -544,9 +561,18 @@ pub fn remove_liquidity(
     let share_b = lp_amount * pool.reserve_b / pool.lp_total_supply;
 
     // Update reserves
-    pool.reserve_a = pool.reserve_a.checked_sub(share_a).ok_or(AmmError::InsufficientLiquidity)?;
-    pool.reserve_b = pool.reserve_b.checked_sub(share_b).ok_or(AmmError::InsufficientLiquidity)?;
-    pool.lp_total_supply = pool.lp_total_supply.checked_sub(lp_amount).ok_or(AmmError::InvalidAmount)?;
+    pool.reserve_a = pool
+        .reserve_a
+        .checked_sub(share_a)
+        .ok_or(AmmError::InsufficientLiquidity)?;
+    pool.reserve_b = pool
+        .reserve_b
+        .checked_sub(share_b)
+        .ok_or(AmmError::InsufficientLiquidity)?;
+    pool.lp_total_supply = pool
+        .lp_total_supply
+        .checked_sub(lp_amount)
+        .ok_or(AmmError::InvalidAmount)?;
 
     env.storage().persistent().set(&key, &pool);
 
@@ -570,6 +596,10 @@ pub fn remove_liquidity(
 ///
 /// `route` is a vec of pool_ids that form a chain: resource_in -> pool[0] -> ... -> pool[n] -> resource_out.
 /// For a single-pool swap, route contains exactly one pool_id.
+/// # Security
+/// * Holds a reentrancy guard across the full multi-hop reserve update
+///   sequence so a nested call cannot observe or trade against a
+///   partially-updated pool mid-route (Issue #238).
 pub fn swap_exact_input(
     env: &Env,
     trader: &Address,
@@ -587,65 +617,85 @@ pub fn swap_exact_input(
         return Err(AmmError::InvalidRoute);
     }
 
-    let mut current_amount = amount_in;
-    let resource_in_clone = resource_in.clone();
-    let mut current_resource = resource_in;
+    with_guard(env, || {
+        let mut current_amount = amount_in;
+        let resource_in_clone = resource_in.clone();
+        let mut current_resource = resource_in;
 
-    for i in 0..route.len() {
-        let pool_id = route.get(i).ok_or(AmmError::InvalidRoute)?;
-        let key = AmmKey::Pool(pool_id);
-        let pool: LiquidityPool = env
-            .storage()
-            .persistent()
-            .get(&key)
-            .ok_or(AmmError::PoolNotFound)?;
+        for i in 0..route.len() {
+            let pool_id = route.get(i).ok_or(AmmError::InvalidRoute)?;
+            let key = AmmKey::Pool(pool_id);
+            let pool: LiquidityPool = env
+                .storage()
+                .persistent()
+                .get(&key)
+                .ok_or(AmmError::PoolNotFound)?;
 
-        let (reserve_in, reserve_out) = if pool.resource_a == current_resource {
-            (pool.reserve_a, pool.reserve_b)
-        } else if pool.resource_b == current_resource {
-            (pool.reserve_b, pool.reserve_a)
-        } else {
-            return Err(AmmError::InvalidRoute);
-        };
+            let (reserve_in, reserve_out) = if pool.resource_a == current_resource {
+                (pool.reserve_a, pool.reserve_b)
+            } else if pool.resource_b == current_resource {
+                (pool.reserve_b, pool.reserve_a)
+            } else {
+                return Err(AmmError::InvalidRoute);
+            };
 
-        if reserve_in <= 0 || reserve_out <= 0 {
-            return Err(AmmError::InsufficientLiquidity);
+            if reserve_in <= 0 || reserve_out <= 0 {
+                return Err(AmmError::InsufficientLiquidity);
+            }
+
+            let output = get_output_amount(current_amount, reserve_in, reserve_out, pool.fee_bps);
+            if output <= 0 {
+                return Err(AmmError::InsufficientLiquidity);
+            }
+
+            // Update pool reserves
+            let mut updated_pool = pool;
+            if updated_pool.resource_a == current_resource {
+                updated_pool.reserve_a = updated_pool
+                    .reserve_a
+                    .checked_add(current_amount)
+                    .ok_or(AmmError::InvalidAmount)?;
+                updated_pool.reserve_b = updated_pool
+                    .reserve_b
+                    .checked_sub(output)
+                    .ok_or(AmmError::InsufficientLiquidity)?;
+                current_resource = updated_pool.resource_b.clone();
+            } else {
+                updated_pool.reserve_b = updated_pool
+                    .reserve_b
+                    .checked_add(current_amount)
+                    .ok_or(AmmError::InvalidAmount)?;
+                updated_pool.reserve_a = updated_pool
+                    .reserve_a
+                    .checked_sub(output)
+                    .ok_or(AmmError::InsufficientLiquidity)?;
+                current_resource = updated_pool.resource_a.clone();
+            }
+
+            env.storage()
+                .persistent()
+                .set(&AmmKey::Pool(pool_id), &updated_pool);
+
+            current_amount = output;
         }
 
-        let output = get_output_amount(current_amount, reserve_in, reserve_out, pool.fee_bps);
-        if output <= 0 {
-            return Err(AmmError::InsufficientLiquidity);
+        if current_amount < min_amount_out {
+            return Err(AmmError::SlippageExceeded);
         }
 
-        // Update pool reserves
-        let mut updated_pool = pool;
-        if updated_pool.resource_a == current_resource {
-            updated_pool.reserve_a = updated_pool.reserve_a.checked_add(current_amount).ok_or(AmmError::InvalidAmount)?;
-            updated_pool.reserve_b = updated_pool.reserve_b.checked_sub(output).ok_or(AmmError::InsufficientLiquidity)?;
-            current_resource = updated_pool.resource_b.clone();
-        } else {
-            updated_pool.reserve_b = updated_pool.reserve_b.checked_add(current_amount).ok_or(AmmError::InvalidAmount)?;
-            updated_pool.reserve_a = updated_pool.reserve_a.checked_sub(output).ok_or(AmmError::InsufficientLiquidity)?;
-            current_resource = updated_pool.resource_a.clone();
-        }
+        env.events().publish(
+            (symbol_short!("amm"), symbol_short!("swap")),
+            (
+                trader.clone(),
+                resource_in_clone,
+                amount_in,
+                current_resource.clone(),
+                current_amount,
+            ),
+        );
 
-        env.storage()
-            .persistent()
-            .set(&AmmKey::Pool(pool_id), &updated_pool);
-
-        current_amount = output;
-    }
-
-    if current_amount < min_amount_out {
-        return Err(AmmError::SlippageExceeded);
-    }
-
-    env.events().publish(
-        (symbol_short!("amm"), symbol_short!("swap")),
-        (trader.clone(), resource_in_clone, amount_in, current_resource.clone(), current_amount),
-    );
-
-    Ok(current_amount)
+        Ok(current_amount)
+    })
 }
 
 /// Get pool details.
@@ -698,5 +748,81 @@ pub fn quote_swap(
         return Err(AmmError::InsufficientLiquidity);
     }
 
-    Ok(get_output_amount(amount_in, reserve_in, reserve_out, pool.fee_bps))
+    Ok(get_output_amount(
+        amount_in,
+        reserve_in,
+        reserve_out,
+        pool.fee_bps,
+    ))
+}
+
+// ── Tests (Issue #238: reentrancy safety) ───────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{contract, contractimpl, testutils::Address as _};
+
+    #[contract]
+    struct Stub;
+    #[contractimpl]
+    impl Stub {}
+
+    fn make_env() -> (Env, Address) {
+        let env = Env::default();
+        env.mock_all_auths();
+        let contract_id = env.register(Stub, ());
+        (env, contract_id)
+    }
+
+    fn seed_pool(env: &Env, provider: &Address, resource_a: Symbol, resource_b: Symbol) -> u64 {
+        let pool_id = create_pool(env, provider, resource_a, resource_b).unwrap();
+        add_liquidity(env, provider, pool_id, 10_000, 10_000).unwrap();
+        pool_id
+    }
+
+    #[test]
+    fn test_swap_exact_input_rejected_while_guard_held() {
+        // Simulates a reentrant callback attempting to re-enter
+        // swap_exact_input while a prior invocation's guard is held.
+        let (env, contract_id) = make_env();
+        let provider = Address::generate(&env);
+        let trader = Address::generate(&env);
+        let resource_a = Symbol::new(&env, "stdust");
+        let resource_b = Symbol::new(&env, "drmatt");
+
+        env.as_contract(&contract_id, || {
+            let pool_id = seed_pool(&env, &provider, resource_a.clone(), resource_b.clone());
+            let mut route = Vec::new(&env);
+            route.push_back(pool_id);
+
+            crate::reentrancy_guard::acquire(&env).expect("lock should be free");
+            let result = swap_exact_input(&env, &trader, resource_a.clone(), 100, 0, route.clone());
+            assert_eq!(result, Err(AmmError::Reentrancy));
+            crate::reentrancy_guard::release(&env);
+
+            // Once released, the swap succeeds normally.
+            let out = swap_exact_input(&env, &trader, resource_a, 100, 0, route)
+                .expect("swap should succeed once unlocked");
+            assert!(out > 0);
+        });
+    }
+
+    #[test]
+    fn test_swap_exact_input_respects_slippage() {
+        let (env, contract_id) = make_env();
+        let provider = Address::generate(&env);
+        let trader = Address::generate(&env);
+        let resource_a = Symbol::new(&env, "stdust");
+        let resource_b = Symbol::new(&env, "drmatt");
+
+        env.as_contract(&contract_id, || {
+            let pool_id = seed_pool(&env, &provider, resource_a.clone(), resource_b.clone());
+            let mut route = Vec::new(&env);
+            route.push_back(pool_id);
+
+            let result = swap_exact_input(&env, &trader, resource_a, 100, i128::MAX, route);
+            assert_eq!(result, Err(AmmError::SlippageExceeded));
+        });
+    }
 }

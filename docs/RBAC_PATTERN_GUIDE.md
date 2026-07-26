@@ -206,6 +206,33 @@ Result: Frontend can disable buttons or show warnings for actions the user can't
 
 ---
 
+## Hardening Ad-Hoc Admin Setters (Issue #237)
+
+Some modules (`leaderboards`, `content_tools`, `pvp_combat`) predate the RBAC
+system above and use a simpler single-admin pattern instead of
+`access_control`. Their `set_admin(env, admin)` functions used to only
+require the *incoming* admin's own signature — never the *current* admin's —
+which let any caller call `set_admin` at any time and silently hijack the
+role.
+
+They are now one-time initializers, matching the idempotency guard already
+used by `access_control::init_roles` and `emergency_controls::initialize_admins`:
+
+```rust
+pub fn set_admin(env: &Env, admin: &Address) -> Result<(), MyError> {
+    admin.require_auth();
+    if get_admin(env).is_some() {
+        return Err(MyError::AlreadyInitialized);
+    }
+    env.storage().persistent().set(&DataKey::Admin, admin);
+    Ok(())
+}
+```
+
+Once set, admin can only change via an explicit transfer function gated on
+the *current* admin's signature (see `access_control::transfer_admin` for the
+reference implementation) — never via a bare re-call of `set_admin`.
+
 ## Common Mistakes to Avoid
 
 ### ❌ Mistake 1: Forgetting to Initialize

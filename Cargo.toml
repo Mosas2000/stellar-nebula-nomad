@@ -42,8 +42,10 @@ panic = "abort"
 incremental = false
 # Strip debug symbols and DWARF sections from the final artifact.
 strip = true
-# Compact general allocator to reduce binary overhead.
-overflow-checks = false
+# Arithmetic overflow must abort (not silently wrap) — see docs/YIELD_MATH.md
+# and the checked/saturating arithmetic used throughout the balance-modifying
+# contract functions (Issue #239).
+overflow-checks = true
 
 # ─── Profile for post-build wasm-opt processing ───────────────────────────
 # When `wasm-opt -Oz` is run downstream (e.g. in deploy.sh), this profile

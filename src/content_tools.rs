@@ -1,4 +1,6 @@
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Vec, Symbol, Map, Bytes};
+use soroban_sdk::{
+    contracterror, contracttype, symbol_short, Address, Bytes, Env, Map, String, Symbol, Vec,
+};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -24,6 +26,8 @@ pub enum ContentToolsError {
     UnderReview = 8,
     /// Content has been rejected.
     ContentRejected = 9,
+    /// Admin has already been set; set_admin is a one-time initializer (Issue #237).
+    AlreadyInitialized = 10,
 }
 
 // ── Storage Keys ──────────────────────────────────────────────────────────────
@@ -128,22 +132,27 @@ pub const CONTENT_TYPE_EVENT: &str = "event";
 
 // ── Admin Functions ──────────────────────────────────────────────────────────
 
-pub fn set_admin(env: &Env, admin: &Address) {
+/// Bootstrap the content-tools admin. Callable exactly once — subsequent
+/// calls return `AlreadyInitialized` instead of letting any caller
+/// overwrite the admin (Issue #237: this previously let anyone re-appoint
+/// themselves).
+pub fn set_admin(env: &Env, admin: &Address) -> Result<(), ContentToolsError> {
     admin.require_auth();
-    let old_admin = get_admin(env);
+    if get_admin(env).is_some() {
+        return Err(ContentToolsError::AlreadyInitialized);
+    }
     env.storage()
         .persistent()
         .set(&ContentDataKey::Admin, admin);
     env.events().publish(
         (symbol_short!("ct"), symbol_short!("cnt_admn")),
-        (old_admin, admin.clone()),
+        (Option::<Address>::None, admin.clone()),
     );
+    Ok(())
 }
 
 fn get_admin(env: &Env) -> Option<Address> {
-    env.storage()
-        .persistent()
-        .get(&ContentDataKey::Admin)
+    env.storage().persistent().get(&ContentDataKey::Admin)
 }
 
 fn require_admin(env: &Env, caller: &Address) -> Result<(), ContentToolsError> {
@@ -220,12 +229,15 @@ pub fn create_content(
         .set(&ContentDataKey::Content(content_id), &content);
 
     creator_contents.push_back(content_id);
-    env.storage().persistent().set(&creator_key, &creator_contents);
-
-    // Set initial status as pending review
     env.storage()
         .persistent()
-        .set(&ContentDataKey::Status(content_id), &symbol_short!("pending"));
+        .set(&creator_key, &creator_contents);
+
+    // Set initial status as pending review
+    env.storage().persistent().set(
+        &ContentDataKey::Status(content_id),
+        &symbol_short!("pending"),
+    );
 
     env.events().publish(
         (symbol_short!("ct"), symbol_short!("created")),
@@ -436,22 +448,14 @@ pub fn vote_content(
 
     // Update vote count
     let vote_count_key = ContentDataKey::VoteCount(content_id);
-    let vote_count: u64 = env
-        .storage()
-        .persistent()
-        .get(&vote_count_key)
-        .unwrap_or(0);
+    let vote_count: u64 = env.storage().persistent().get(&vote_count_key).unwrap_or(0);
     env.storage()
         .persistent()
         .set(&vote_count_key, &(vote_count + 1));
 
     // Update rating sum
     let rating_sum_key = ContentDataKey::RatingSum(content_id);
-    let rating_sum: u64 = env
-        .storage()
-        .persistent()
-        .get(&rating_sum_key)
-        .unwrap_or(0);
+    let rating_sum: u64 = env.storage().persistent().get(&rating_sum_key).unwrap_or(0);
     env.storage()
         .persistent()
         .set(&rating_sum_key, &(rating_sum + rating as u64));
@@ -524,10 +528,7 @@ pub fn get_vote_result(env: &Env, content_id: u64) -> VoteResult {
 
 // ── Play Count ─────────────────────────────────────────────────────────────
 
-pub fn increment_play_count(
-    env: &Env,
-    content_id: u64,
-) -> Result<(), ContentToolsError> {
+pub fn increment_play_count(env: &Env, content_id: u64) -> Result<(), ContentToolsError> {
     let key = ContentDataKey::Content(content_id);
     let mut content: CreatedContent = env
         .storage()
@@ -753,7 +754,11 @@ pub fn purchase_content(
 
     // Credit creator revenue
     let creator_rev_key = ContentDataKey::CreatorRevenue(content.creator.clone());
-    let creator_balance: i128 = env.storage().persistent().get(&creator_rev_key).unwrap_or(0);
+    let creator_balance: i128 = env
+        .storage()
+        .persistent()
+        .get(&creator_rev_key)
+        .unwrap_or(0);
     env.storage()
         .persistent()
         .set(&creator_rev_key, &(creator_balance + creator_share));
@@ -764,9 +769,10 @@ pub fn purchase_content(
         .persistent()
         .get(&ContentDataKey::PlatformRevenue)
         .unwrap_or(0);
-    env.storage()
-        .persistent()
-        .set(&ContentDataKey::PlatformRevenue, &(platform_balance + platform_share));
+    env.storage().persistent().set(
+        &ContentDataKey::PlatformRevenue,
+        &(platform_balance + platform_share),
+    );
 
     let content_price = content.price;
 
@@ -785,7 +791,13 @@ pub fn purchase_content(
 
     env.events().publish(
         (symbol_short!("ct"), symbol_short!("purchased")),
-        (content_id, buyer.clone(), content_price, creator_share, platform_share),
+        (
+            content_id,
+            buyer.clone(),
+            content_price,
+            creator_share,
+            platform_share,
+        ),
     );
 
     Ok(result)
@@ -903,12 +915,31 @@ mod tests {
             .unwrap();
 
             // Need admin to approve first
-            set_admin(&env, &creator);
+            set_admin(&env, &creator).unwrap();
             approve_content(&env, &creator, content_id).unwrap();
 
             vote_content(&env, &voter, content_id, 5).unwrap();
             let result = get_vote_result(&env, content_id);
             assert_eq!(result.total_votes, 1);
+        });
+    }
+
+    #[test]
+    fn test_set_admin_cannot_be_hijacked_after_init() {
+        // Issue #237: set_admin previously let ANY caller overwrite the
+        // admin at any time. Now it is a one-time initializer.
+        let (env, _contract_id) = make_env();
+        let admin = Address::generate(&env);
+        let attacker = Address::generate(&env);
+
+        env.as_contract(&_contract_id, || {
+            set_admin(&env, &admin).unwrap();
+
+            let result = set_admin(&env, &attacker);
+            assert_eq!(result, Err(ContentToolsError::AlreadyInitialized));
+
+            let result = approve_content(&env, &attacker, 1);
+            assert_eq!(result, Err(ContentToolsError::Unauthorized));
         });
     }
 }
