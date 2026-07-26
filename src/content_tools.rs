@@ -2,6 +2,8 @@ use soroban_sdk::{
     contracterror, contracttype, symbol_short, Address, Bytes, Env, Map, String, Symbol, Vec,
 };
 
+use crate::input_validation;
+
 // ── Error ─────────────────────────────────────────────────────────────────────
 
 #[contracterror]
@@ -177,6 +179,11 @@ pub fn create_content(
     tags: Vec<Symbol>,
 ) -> Result<u64, ContentToolsError> {
     creator.require_auth();
+
+    input_validation::validate_name(env, &name)
+        .map_err(|_| ContentToolsError::InvalidContent)?;
+    input_validation::validate_description(env, &description)
+        .map_err(|_| ContentToolsError::InvalidContent)?;
 
     // Check creator content limit
     let creator_key = ContentDataKey::CreatorContent(creator.clone());

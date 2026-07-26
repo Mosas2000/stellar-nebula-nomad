@@ -26,6 +26,14 @@ pub enum Operation {
     ResourceMinting,
     /// `upgrade_ship` — ship NFT state mutation.
     ShipUpgrade,
+    /// `scan_nebula` — nebula scan operation.
+    NebulaScan,
+    /// `batch_operation` — batch processing operations.
+    BatchOperation,
+    /// `privacy_commit` — privacy stat commitments.
+    PrivacyCommit,
+    /// `route_calculation` — navigation route calculation.
+    RouteCalculation,
 }
 
 // ── Config types ──────────────────────────────────────────────
@@ -48,6 +56,18 @@ impl RateLimitConfig {
     }
     pub fn default_ship_upgrade() -> Self {
         Self { max_calls: 3,  window_seconds: 300 }  // 3 upgrades / 5 min
+    }
+    pub fn default_nebula_scan() -> Self {
+        Self { max_calls: 10, window_seconds: 3600 }  // 10 scans / hour
+    }
+    pub fn default_batch_operation() -> Self {
+        Self { max_calls: 5,  window_seconds: 3600 }  // 5 batch ops / hour
+    }
+    pub fn default_privacy_commit() -> Self {
+        Self { max_calls: 20, window_seconds: 3600 }  // 20 commits / hour
+    }
+    pub fn default_route_calculation() -> Self {
+        Self { max_calls: 15, window_seconds: 3600 }  // 15 route calcs / hour
     }
 }
 
@@ -101,6 +121,10 @@ pub fn check_rate_limit(
             Operation::NebulaGeneration => RateLimitConfig::default_nebula_generation(),
             Operation::ResourceMinting  => RateLimitConfig::default_resource_minting(),
             Operation::ShipUpgrade      => RateLimitConfig::default_ship_upgrade(),
+            Operation::NebulaScan       => RateLimitConfig::default_nebula_scan(),
+            Operation::BatchOperation   => RateLimitConfig::default_batch_operation(),
+            Operation::PrivacyCommit    => RateLimitConfig::default_privacy_commit(),
+            Operation::RouteCalculation => RateLimitConfig::default_route_calculation(),
         });
 
     let now         = env.ledger().timestamp();

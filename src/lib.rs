@@ -32,6 +32,9 @@ mod emergency_controls;
 mod metadata_resolver;
 mod randomness_oracle;
 mod rate_limiter;
+mod input_validation;
+pub mod bridge;
+pub mod realtime_events;
 pub mod nebula_gen;
 pub mod ship_upgrade;
 #[cfg(any(test, feature = "fuzz"))]
@@ -79,6 +82,7 @@ mod audio_seed_generator;
 mod privacy_stats;
 mod navigation_planner;
 mod event_scheduler;
+mod guild_quests;
 
 mod rewards;
 mod nft_marketplace;

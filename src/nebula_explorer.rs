@@ -1,4 +1,5 @@
 use crate::difficulty_curve;
+use crate::rate_limiter;
 use soroban_sdk::{contracttype, symbol_short, Address, Bytes, BytesN, Env, Vec};
 
 pub const GRID_SIZE: u32 = 16;
@@ -132,6 +133,9 @@ fn energy_for_cell(cell_type: &CellType, val: u64) -> u32 {
 /// The `player` address is authenticated via `require_auth` and recorded
 /// in the emitted event for attribution.
 pub fn generate_nebula_layout(env: &Env, seed: &BytesN<32>, player: &Address) -> NebulaLayout {
+    rate_limiter::check_rate_limit(env, player, rate_limiter::Operation::NebulaGeneration)
+        .expect("rate limit exceeded for nebula generation");
+
     let combined = compute_combined_hash(env, seed);
     let prng_seed = seed_from_hash(env, &combined);
     let mut rng = Xorshift64::new(prng_seed);

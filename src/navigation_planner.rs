@@ -1,5 +1,7 @@
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Vec};
 
+use crate::rate_limiter;
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /// Maximum hops allowed in a single route (configurable via admin).
@@ -193,6 +195,8 @@ pub fn add_nebula_connections_batch(
         return Err(NavError::BatchTooLarge);
     }
     admin.require_auth();
+    rate_limiter::check_rate_limit(env, admin, rate_limiter::Operation::RouteCalculation)
+        .map_err(|_| NavError::BatchTooLarge)?;
     let count = edges.len();
     for i in 0..count {
         let e = edges.get(i).unwrap();

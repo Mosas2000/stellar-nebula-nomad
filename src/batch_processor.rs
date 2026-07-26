@@ -1,5 +1,7 @@
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Vec};
 
+use crate::rate_limiter;
+
 /// Maximum number of operations per batch.
 ///
 /// This is the documented **maximum safe batch size**: at
@@ -131,6 +133,9 @@ pub fn queue_batch_operation(
     operations: Vec<BatchOp>,
 ) -> Result<u32, BatchError> {
     player.require_auth();
+
+    rate_limiter::check_rate_limit(env, player, rate_limiter::Operation::BatchOperation)
+        .map_err(|_| BatchError::GasLimitExceeded)?;
 
     if operations.len() == 0 {
         return Err(BatchError::EmptyBatch);

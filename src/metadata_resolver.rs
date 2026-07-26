@@ -250,7 +250,20 @@ fn get_gateway(env: &Env) -> Bytes {
 }
 
 fn validate_cid(cid: &Bytes) -> bool {
-    cid.len() > 0
+    if cid.len() == 0 || cid.len() > 128 {
+        return false;
+    }
+    // CIDv0: 46 bytes starting with 'Qm' (base58)
+    // CIDv1: starts with 'b' (base32 multicodec prefix), >= 50 bytes
+    let first = cid.get(0).unwrap_or(0);
+    let second = cid.get(1).unwrap_or(0);
+    if cid.len() == 46 && first == b'Q' && second == b'm' {
+        return true;
+    }
+    if first == b'b' && cid.len() >= 50 {
+        return true;
+    }
+    false
 }
 
 // ─── Public API ──────────────────────────────────────────────────────────
