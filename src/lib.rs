@@ -95,6 +95,10 @@ pub mod achievements;
 mod ship_customization;
 mod skins;
 mod crafting;
+
+// Retention, economy, content and cosmetic-marketplace systems
+// (Issues #280, #281, #282, #283).
+mod daily_rewards;
 pub mod recipes;
 pub mod notifications {
     pub mod push_service;
@@ -334,6 +338,12 @@ pub use ship_customization::{
     ShipSkin, SkinRarity, SkinError,
 };
 pub use skins::{get_skin_templates, SkinTemplate};
+
+// ─── Daily Login Rewards (Issue #280) ─────────────────────────────────────
+pub use daily_rewards::{
+    DailyReward, DailyRewardError, DailyRewardStats, LoginRecord, RewardKind, CALENDAR_DAYS,
+    MAX_STREAK_BONUS_BPS, STREAK_BONUS_BPS_PER_DAY, STREAK_BONUS_CAP_DAYS,
+};
 
 pub use economics::monitor::{
     initialize_monitor, update_supply_metrics, track_resource_activity,
@@ -2797,6 +2807,46 @@ impl NebulaNomadContract {
 
     pub fn get_skin_templates(env: Env) -> Vec<SkinTemplate> {
         skins::get_skin_templates(&env)
+    }
+
+    // ─── Daily Login Rewards (Issue #280) ─────────────────────────────────
+
+    /// Claim today's login reward, advancing the calendar and streak.
+    pub fn claim_daily_reward(env: Env, player: Address) -> Result<DailyReward, DailyRewardError> {
+        daily_rewards::claim_daily_reward(&env, player)
+    }
+
+    /// The reward the player would receive if they claimed right now.
+    pub fn preview_daily_reward(
+        env: Env,
+        player: Address,
+    ) -> Result<DailyReward, DailyRewardError> {
+        daily_rewards::preview_daily_reward(&env, &player)
+    }
+
+    /// Whether the player has an unclaimed reward available today.
+    pub fn can_claim_daily_reward(env: Env, player: Address) -> bool {
+        daily_rewards::can_claim(&env, &player)
+    }
+
+    /// The player's consecutive-login streak (0 once it lapses).
+    pub fn get_daily_streak(env: Env, player: Address) -> u32 {
+        daily_rewards::get_streak(&env, &player)
+    }
+
+    /// The player's full login/claim record.
+    pub fn get_login_record(env: Env, player: Address) -> Option<LoginRecord> {
+        daily_rewards::get_login_record(&env, &player)
+    }
+
+    /// Render the whole 28-day calendar at a hypothetical streak.
+    pub fn get_reward_calendar(env: Env, streak: u32) -> Vec<DailyReward> {
+        daily_rewards::get_reward_calendar(&env, streak)
+    }
+
+    /// Aggregate daily-reward statistics.
+    pub fn get_daily_reward_stats(env: Env) -> DailyRewardStats {
+        daily_rewards::get_daily_reward_stats(&env)
     }
 
     // ─── Economic Monitoring & Balancing ──────────────────────────────────
