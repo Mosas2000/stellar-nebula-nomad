@@ -9,7 +9,7 @@
 //   • Contract struct name: NebulaGen  (main's rename wins as trunk)
 //   • Error enum: unified NebulaError; added InvalidShipId, InvalidRegionId,
 //     AnomalyOutOfBounds from combined-fixed into main's set
-//   • Input validation (ship_id, region_id, seed) kept in generate_nebula_layout
+//   • Input validation (ship_id, region_id, seed) kept in generate_validated_nebula_layout
 //   • has_anomaly returns Result<bool, NebulaError> — preserves InvalidShipId
 //     signalling while also surfacing expiry (LayoutNotFound)
 //   • TTL / extend_ttl / admin sweep logic kept from main
@@ -268,7 +268,7 @@ impl NebulaGen {
     /// - `ship_id`   must be > 0
     /// - `region_id` must be in [1, MAX_REGION_ID]
     /// - `seed`      must not be all-zero bytes
-    pub fn generate_nebula_layout(
+    pub fn generate_validated_nebula_layout(
         env:       Env,
         caller:    Address,
         ship_id:   u64,
@@ -551,7 +551,7 @@ mod tests {
 
     fn gen_layout(env: &Env, client: &NebulaGenClient, ship_id: u64) {
         let caller = Address::generate(env);
-        client.generate_nebula_layout(&caller, &ship_id, &1u64, &valid_seed(env));
+        client.generate_validated_nebula_layout(&caller, &ship_id, &1u64, &valid_seed(env));
     }
 
     // ── ship_id validation (Issue #170) ──────────────────────
@@ -560,7 +560,7 @@ mod tests {
     fn test_ship_id_zero_rejected() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        let result = client.try_generate_nebula_layout(
+        let result = client.try_generate_validated_nebula_layout(
             &caller, &0u64, &1u64, &valid_seed(&env),
         );
         assert_eq!(result, Err(Ok(NebulaError::InvalidShipId)));
@@ -570,7 +570,7 @@ mod tests {
     fn test_ship_id_one_accepted() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        assert!(client.try_generate_nebula_layout(
+        assert!(client.try_generate_validated_nebula_layout(
             &caller, &1u64, &1u64, &valid_seed(&env),
         ).is_ok());
     }
@@ -579,7 +579,7 @@ mod tests {
     fn test_ship_id_max_u64_accepted() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        assert!(client.try_generate_nebula_layout(
+        assert!(client.try_generate_validated_nebula_layout(
             &caller, &u64::MAX, &1u64, &valid_seed(&env),
         ).is_ok());
     }
@@ -590,7 +590,7 @@ mod tests {
     fn test_region_id_zero_rejected() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        let result = client.try_generate_nebula_layout(
+        let result = client.try_generate_validated_nebula_layout(
             &caller, &1u64, &0u64, &valid_seed(&env),
         );
         assert_eq!(result, Err(Ok(NebulaError::InvalidRegionId)));
@@ -600,7 +600,7 @@ mod tests {
     fn test_region_id_one_accepted() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        assert!(client.try_generate_nebula_layout(
+        assert!(client.try_generate_validated_nebula_layout(
             &caller, &1u64, &1u64, &valid_seed(&env),
         ).is_ok());
     }
@@ -609,7 +609,7 @@ mod tests {
     fn test_region_id_max_accepted() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        assert!(client.try_generate_nebula_layout(
+        assert!(client.try_generate_validated_nebula_layout(
             &caller, &1u64, &MAX_REGION_ID, &valid_seed(&env),
         ).is_ok());
     }
@@ -618,7 +618,7 @@ mod tests {
     fn test_region_id_exceeds_max_rejected() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        let result = client.try_generate_nebula_layout(
+        let result = client.try_generate_validated_nebula_layout(
             &caller, &1u64, &(MAX_REGION_ID + 1), &valid_seed(&env),
         );
         assert_eq!(result, Err(Ok(NebulaError::InvalidRegionId)));
@@ -628,7 +628,7 @@ mod tests {
     fn test_region_id_u64_max_rejected() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        let result = client.try_generate_nebula_layout(
+        let result = client.try_generate_validated_nebula_layout(
             &caller, &1u64, &u64::MAX, &valid_seed(&env),
         );
         assert_eq!(result, Err(Ok(NebulaError::InvalidRegionId)));
@@ -640,7 +640,7 @@ mod tests {
     fn test_all_zero_seed_rejected() {
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        let result = client.try_generate_nebula_layout(
+        let result = client.try_generate_validated_nebula_layout(
             &caller, &1u64, &1u64, &zero_seed(&env),
         );
         assert_eq!(result, Err(Ok(NebulaError::InvalidSeed)));
@@ -653,7 +653,7 @@ mod tests {
         // ship_id is checked before region_id
         let (env, client, _) = setup();
         let caller = Address::generate(&env);
-        let result = client.try_generate_nebula_layout(
+        let result = client.try_generate_validated_nebula_layout(
             &caller, &0u64, &0u64, &valid_seed(&env),
         );
         assert_eq!(result, Err(Ok(NebulaError::InvalidShipId)));
@@ -700,8 +700,8 @@ mod tests {
 
         let caller1 = Address::generate(&env);
         let caller2 = Address::generate(&env);
-        let l1 = client.generate_nebula_layout(&caller1, &42u64, &100u64, &seed);
-        let l2 = client.generate_nebula_layout(&caller2, &42u64, &100u64, &seed);
+        let l1 = client.generate_validated_nebula_layout(&caller1, &42u64, &100u64, &seed);
+        let l2 = client.generate_validated_nebula_layout(&caller2, &42u64, &100u64, &seed);
 
         assert_eq!(l1.layout_hash, l2.layout_hash);
     }

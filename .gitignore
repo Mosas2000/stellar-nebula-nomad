@@ -27,6 +27,7 @@ mobile/.expo/
 *.dylib
 *.dll
 *.wasm
+sdk/dist/
 
 # Soroban
 .soroban/
