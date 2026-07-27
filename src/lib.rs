@@ -99,6 +99,7 @@ mod crafting;
 // Retention, economy, content and cosmetic-marketplace systems
 // (Issues #280, #281, #282, #283).
 mod daily_rewards;
+mod token_burning;
 pub mod recipes;
 pub mod notifications {
     pub mod push_service;
@@ -343,6 +344,11 @@ pub use skins::{get_skin_templates, SkinTemplate};
 pub use daily_rewards::{
     DailyReward, DailyRewardError, DailyRewardStats, LoginRecord, RewardKind, CALENDAR_DAYS,
     MAX_STREAK_BONUS_BPS, STREAK_BONUS_BPS_PER_DAY, STREAK_BONUS_CAP_DAYS,
+};
+
+// ─── Token Burning (Issue #281) ───────────────────────────────────────────
+pub use token_burning::{
+    BurnReason, BurnRecord, BurnStats, BurningError, PlayerBurnStats, MAX_BURN_FEE_BPS,
 };
 
 pub use economics::monitor::{
@@ -2847,6 +2853,84 @@ impl NebulaNomadContract {
     /// Aggregate daily-reward statistics.
     pub fn get_daily_reward_stats(env: Env) -> DailyRewardStats {
         daily_rewards::get_daily_reward_stats(&env)
+    }
+
+    // ─── Token Burning (Issue #281) ───────────────────────────────────────
+
+    /// Destroy the caller's own resources, reducing circulating supply.
+    pub fn burn_resource(
+        env: Env,
+        burner: Address,
+        resource_type: ResourceType,
+        amount: u64,
+        reason: BurnReason,
+    ) -> Result<BurnRecord, BurningError> {
+        token_burning::burn(&env, burner, resource_type, amount, reason)
+    }
+
+    /// Set the admin permitted to change the deflationary fee rate.
+    pub fn initialize_burn_admin(env: Env, admin: Address) -> Result<(), BurningError> {
+        token_burning::initialize_burn_admin(&env, admin)
+    }
+
+    /// Update the deflationary fee rate (admin only).
+    pub fn set_burn_fee_bps(env: Env, caller: Address, bps: u32) -> Result<(), BurningError> {
+        token_burning::set_burn_fee_bps(&env, caller, bps)
+    }
+
+    /// The configured deflationary fee rate, in basis points.
+    pub fn get_burn_fee_bps(env: Env) -> u32 {
+        token_burning::get_burn_fee_bps(&env)
+    }
+
+    /// Global burn statistics for one resource type.
+    pub fn get_burn_stats(env: Env, resource_type: ResourceType) -> BurnStats {
+        token_burning::get_burn_stats(&env, resource_type)
+    }
+
+    /// A single player's burn contribution.
+    pub fn get_player_burn_stats(env: Env, player: Address) -> PlayerBurnStats {
+        token_burning::get_player_burn_stats(&env, player)
+    }
+
+    /// Share of ever-minted supply that has been burned, in basis points.
+    pub fn get_deflation_rate_bps(env: Env, resource_type: ResourceType) -> u32 {
+        token_burning::deflation_rate_bps(&env, &resource_type)
+    }
+
+    /// Retrieve a burn receipt by ID.
+    pub fn get_burn_record(env: Env, burn_id: u64) -> Option<BurnRecord> {
+        token_burning::get_burn_record(&env, burn_id)
+    }
+
+    /// Transfer resources, burning the deflationary fee slice in transit.
+    pub fn transfer_resource_with_burn(
+        env: Env,
+        from: Address,
+        to: Address,
+        resource_type: ResourceType,
+        amount: u64,
+    ) -> Result<u64, BurningError> {
+        token_burning::transfer_with_burn(&env, from, to, resource_type, amount)
+    }
+
+    /// Amount a player has burned of one specific resource type.
+    pub fn get_player_burned_of(
+        env: Env,
+        player: Address,
+        resource_type: ResourceType,
+    ) -> u64 {
+        token_burning::player_burned_of(&env, &player, &resource_type)
+    }
+
+    /// Sum of burned amounts across every resource type.
+    pub fn get_total_burned_all(env: Env) -> u64 {
+        token_burning::total_burned_all(&env)
+    }
+
+    /// Cumulative amount ever minted of a resource, ignoring burns.
+    pub fn get_total_minted(env: Env, resource_type: ResourceType) -> u64 {
+        resource_minter::total_minted(&env, &resource_type)
     }
 
     // ─── Economic Monitoring & Balancing ──────────────────────────────────
