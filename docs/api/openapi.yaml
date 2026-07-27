@@ -71,7 +71,8 @@ tags:
   - name: Resources
     description: Resource harvesting and yield farming
   - name: Bonding
-    description: Nomad bonding, delegation, and shared yield flows  - name: Governance
+    description: Nomad bonding, delegation, and shared yield flows
+  - name: Governance
     description: On-chain governance proposals
 
 paths:
