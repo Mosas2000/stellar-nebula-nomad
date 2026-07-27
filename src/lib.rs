@@ -95,6 +95,12 @@ pub mod achievements;
 mod ship_customization;
 mod skins;
 mod crafting;
+
+// Retention, economy, content and cosmetic-marketplace systems
+// (Issues #280, #281, #282, #283).
+mod daily_rewards;
+mod quest_system;
+mod token_burning;
 pub mod recipes;
 pub mod notifications {
     pub mod push_service;
@@ -334,6 +340,32 @@ pub use ship_customization::{
     ShipSkin, SkinRarity, SkinError,
 };
 pub use skins::{get_skin_templates, SkinTemplate};
+
+// ─── Daily Login Rewards (Issue #280) ─────────────────────────────────────
+pub use daily_rewards::{
+    DailyReward, DailyRewardError, DailyRewardStats, LoginRecord, RewardKind, CALENDAR_DAYS,
+    MAX_STREAK_BONUS_BPS, STREAK_BONUS_BPS_PER_DAY, STREAK_BONUS_CAP_DAYS,
+};
+
+// ─── Token Burning (Issue #281) ───────────────────────────────────────────
+pub use token_burning::{
+    BurnReason, BurnRecord, BurnStats, BurningError, PlayerBurnStats, MAX_BURN_FEE_BPS,
+};
+
+// ─── Quest System (Issue #282) ────────────────────────────────────────────
+pub use quest_system::{
+    ChainProgress, QuestBranch, QuestChain, QuestError, QuestNode, QuestReward, QuestState,
+    QuestStatus, MAX_ACTIVE_QUESTS, MAX_BRANCHES_PER_NODE, MAX_CHAIN_LENGTH,
+};
+
+// ─── Cosmetic NFT Marketplace (Issue #283) ────────────────────────────────
+pub use nft_marketplace::{
+    CosmeticListing, CosmeticMarketStats, CreatorRoyalty, MarketplaceError, SaleSplit,
+    CREATOR_ROYALTY_BPS_DEFAULT, MAX_CREATOR_ROYALTY_BPS, PLATFORM_FEE_BPS,
+};
+pub use skins::{
+    rarity_drop_weight_bps, rarity_floor_price, roll_rarity, SkinPreview, SkinRarityStats,
+};
 
 pub use economics::monitor::{
     initialize_monitor, update_supply_metrics, track_resource_activity,
@@ -2797,6 +2829,344 @@ impl NebulaNomadContract {
 
     pub fn get_skin_templates(env: Env) -> Vec<SkinTemplate> {
         skins::get_skin_templates(&env)
+    }
+
+    // ─── Daily Login Rewards (Issue #280) ─────────────────────────────────
+
+    /// Claim today's login reward, advancing the calendar and streak.
+    pub fn claim_daily_reward(env: Env, player: Address) -> Result<DailyReward, DailyRewardError> {
+        daily_rewards::claim_daily_reward(&env, player)
+    }
+
+    /// The reward the player would receive if they claimed right now.
+    pub fn preview_daily_reward(
+        env: Env,
+        player: Address,
+    ) -> Result<DailyReward, DailyRewardError> {
+        daily_rewards::preview_daily_reward(&env, &player)
+    }
+
+    /// Whether the player has an unclaimed reward available today.
+    pub fn can_claim_daily_reward(env: Env, player: Address) -> bool {
+        daily_rewards::can_claim(&env, &player)
+    }
+
+    /// The player's consecutive-login streak (0 once it lapses).
+    pub fn get_daily_streak(env: Env, player: Address) -> u32 {
+        daily_rewards::get_streak(&env, &player)
+    }
+
+    /// The player's full login/claim record.
+    pub fn get_login_record(env: Env, player: Address) -> Option<LoginRecord> {
+        daily_rewards::get_login_record(&env, &player)
+    }
+
+    /// Render the whole 28-day calendar at a hypothetical streak.
+    pub fn get_reward_calendar(env: Env, streak: u32) -> Vec<DailyReward> {
+        daily_rewards::get_reward_calendar(&env, streak)
+    }
+
+    /// Aggregate daily-reward statistics.
+    pub fn get_daily_reward_stats(env: Env) -> DailyRewardStats {
+        daily_rewards::get_daily_reward_stats(&env)
+    }
+
+    // ─── Token Burning (Issue #281) ───────────────────────────────────────
+
+    /// Destroy the caller's own resources, reducing circulating supply.
+    pub fn burn_resource(
+        env: Env,
+        burner: Address,
+        resource_type: ResourceType,
+        amount: u64,
+        reason: BurnReason,
+    ) -> Result<BurnRecord, BurningError> {
+        token_burning::burn(&env, burner, resource_type, amount, reason)
+    }
+
+    /// Set the admin permitted to change the deflationary fee rate.
+    pub fn initialize_burn_admin(env: Env, admin: Address) -> Result<(), BurningError> {
+        token_burning::initialize_burn_admin(&env, admin)
+    }
+
+    /// Update the deflationary fee rate (admin only).
+    pub fn set_burn_fee_bps(env: Env, caller: Address, bps: u32) -> Result<(), BurningError> {
+        token_burning::set_burn_fee_bps(&env, caller, bps)
+    }
+
+    /// The configured deflationary fee rate, in basis points.
+    pub fn get_burn_fee_bps(env: Env) -> u32 {
+        token_burning::get_burn_fee_bps(&env)
+    }
+
+    /// Global burn statistics for one resource type.
+    pub fn get_burn_stats(env: Env, resource_type: ResourceType) -> BurnStats {
+        token_burning::get_burn_stats(&env, resource_type)
+    }
+
+    /// A single player's burn contribution.
+    pub fn get_player_burn_stats(env: Env, player: Address) -> PlayerBurnStats {
+        token_burning::get_player_burn_stats(&env, player)
+    }
+
+    /// Share of ever-minted supply that has been burned, in basis points.
+    pub fn get_deflation_rate_bps(env: Env, resource_type: ResourceType) -> u32 {
+        token_burning::deflation_rate_bps(&env, &resource_type)
+    }
+
+    /// Retrieve a burn receipt by ID.
+    pub fn get_burn_record(env: Env, burn_id: u64) -> Option<BurnRecord> {
+        token_burning::get_burn_record(&env, burn_id)
+    }
+
+    /// Transfer resources, burning the deflationary fee slice in transit.
+    pub fn transfer_resource_with_burn(
+        env: Env,
+        from: Address,
+        to: Address,
+        resource_type: ResourceType,
+        amount: u64,
+    ) -> Result<u64, BurningError> {
+        token_burning::transfer_with_burn(&env, from, to, resource_type, amount)
+    }
+
+    /// Amount a player has burned of one specific resource type.
+    pub fn get_player_burned_of(
+        env: Env,
+        player: Address,
+        resource_type: ResourceType,
+    ) -> u64 {
+        token_burning::player_burned_of(&env, &player, &resource_type)
+    }
+
+    /// Sum of burned amounts across every resource type.
+    pub fn get_total_burned_all(env: Env) -> u64 {
+        token_burning::total_burned_all(&env)
+    }
+
+    /// Cumulative amount ever minted of a resource, ignoring burns.
+    pub fn get_total_minted(env: Env, resource_type: ResourceType) -> u64 {
+        resource_minter::total_minted(&env, &resource_type)
+    }
+
+    // ─── Quest System (Issue #282) ────────────────────────────────────────
+
+    /// Create an empty quest chain owned by `creator`.
+    pub fn define_quest_chain(
+        env: Env,
+        creator: Address,
+        name: Symbol,
+    ) -> Result<u64, QuestError> {
+        quest_system::define_chain(&env, creator, name)
+    }
+
+    /// Append a node to a quest chain.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_quest_node(
+        env: Env,
+        creator: Address,
+        chain_id: u64,
+        objective: Symbol,
+        target_count: u32,
+        reward: QuestReward,
+        narrative_tier: Symbol,
+        title: String,
+        description: String,
+        branches: Vec<QuestBranch>,
+        duration_secs: u64,
+    ) -> Result<u64, QuestError> {
+        quest_system::add_quest_node(
+            &env,
+            creator,
+            chain_id,
+            objective,
+            target_count,
+            reward,
+            narrative_tier,
+            title,
+            description,
+            branches,
+            duration_secs,
+        )
+    }
+
+    /// Verify every branch in a chain points at an existing node.
+    pub fn validate_quest_chain(env: Env, chain_id: u64) -> Result<(), QuestError> {
+        quest_system::validate_chain(&env, chain_id)
+    }
+
+    /// Begin a quest chain, activating its root node.
+    pub fn start_quest_chain(
+        env: Env,
+        player: Address,
+        chain_id: u64,
+    ) -> Result<QuestState, QuestError> {
+        quest_system::start_chain(&env, player, chain_id)
+    }
+
+    /// Add progress to an active quest.
+    pub fn record_quest_progress(
+        env: Env,
+        player: Address,
+        quest_id: u64,
+        amount: u32,
+    ) -> Result<QuestState, QuestError> {
+        quest_system::record_progress(&env, player, quest_id, amount)
+    }
+
+    /// Claim the reward for a completed quest.
+    pub fn claim_quest_reward(
+        env: Env,
+        player: Address,
+        quest_id: u64,
+    ) -> Result<QuestReward, QuestError> {
+        quest_system::claim_quest_reward(&env, player, quest_id)
+    }
+
+    /// Take a branch out of a claimed quest, activating the successor node.
+    pub fn choose_quest_branch(
+        env: Env,
+        player: Address,
+        quest_id: u64,
+        choice_id: u32,
+    ) -> Result<Option<QuestState>, QuestError> {
+        quest_system::choose_branch(&env, player, quest_id, choice_id)
+    }
+
+    /// Fetch a quest node definition.
+    pub fn get_quest_node(env: Env, quest_id: u64) -> Option<QuestNode> {
+        quest_system::get_quest_node(&env, quest_id)
+    }
+
+    /// Fetch a quest chain definition.
+    pub fn get_quest_chain(env: Env, chain_id: u64) -> Option<QuestChain> {
+        quest_system::get_chain(&env, chain_id)
+    }
+
+    /// Fetch a player's state for one quest.
+    pub fn get_quest_state(env: Env, player: Address, quest_id: u64) -> Option<QuestState> {
+        quest_system::get_quest_state(&env, &player, quest_id)
+    }
+
+    /// Fetch a player's progress through one chain, including the path walked.
+    pub fn get_quest_chain_progress(
+        env: Env,
+        player: Address,
+        chain_id: u64,
+    ) -> Option<ChainProgress> {
+        quest_system::get_chain_progress(&env, &player, chain_id)
+    }
+
+    /// State records for the player's currently active quests.
+    pub fn get_active_quests(env: Env, player: Address) -> Vec<QuestState> {
+        quest_system::get_active_quest_states(&env, &player)
+    }
+
+    /// IDs of the player's currently active quests.
+    pub fn get_active_quest_ids(env: Env, player: Address) -> Vec<u64> {
+        quest_system::get_active_quests(&env, &player)
+    }
+
+    // ─── Cosmetic NFT Marketplace (Issue #283) ────────────────────────────
+
+    /// List a cosmetic skin NFT for sale at or above its rarity floor.
+    pub fn list_cosmetic(
+        env: Env,
+        seller: Address,
+        skin_id: u64,
+        price: i128,
+    ) -> Result<CosmeticListing, MarketplaceError> {
+        nft_marketplace::list_cosmetic(&env, &seller, skin_id, price)
+    }
+
+    /// Purchase a listed cosmetic, settling creator royalty and platform fee.
+    pub fn buy_cosmetic(
+        env: Env,
+        buyer: Address,
+        skin_id: u64,
+    ) -> Result<SaleSplit, MarketplaceError> {
+        nft_marketplace::buy_cosmetic(&env, &buyer, skin_id)
+    }
+
+    /// Cancel an open cosmetic listing, releasing the skin from escrow.
+    pub fn cancel_cosmetic_listing(
+        env: Env,
+        seller: Address,
+        skin_id: u64,
+    ) -> Result<(), MarketplaceError> {
+        nft_marketplace::cancel_cosmetic_listing(&env, &seller, skin_id)
+    }
+
+    /// The open cosmetic listing for a skin, if any.
+    pub fn get_cosmetic_listing(env: Env, skin_id: u64) -> Option<CosmeticListing> {
+        nft_marketplace::get_cosmetic_listing(&env, skin_id)
+    }
+
+    /// Register a perpetual creator royalty on a cosmetic (owner only, once).
+    pub fn register_creator_royalty(
+        env: Env,
+        creator: Address,
+        skin_id: u64,
+        bps: i128,
+    ) -> Result<CreatorRoyalty, MarketplaceError> {
+        nft_marketplace::register_creator_royalty(&env, &creator, skin_id, bps)
+    }
+
+    /// The registered creator royalty for a cosmetic.
+    pub fn get_creator_royalty(env: Env, skin_id: u64) -> Option<CreatorRoyalty> {
+        nft_marketplace::get_creator_royalty(&env, skin_id)
+    }
+
+    /// Royalties credited to a creator and not yet withdrawn.
+    pub fn get_creator_earnings(env: Env, creator: Address) -> i128 {
+        nft_marketplace::get_creator_earnings(&env, &creator)
+    }
+
+    /// Withdraw all accrued creator royalties.
+    pub fn withdraw_creator_earnings(
+        env: Env,
+        creator: Address,
+    ) -> Result<i128, MarketplaceError> {
+        nft_marketplace::withdraw_creator_earnings(&env, &creator)
+    }
+
+    /// How a given price would be split, before listing.
+    pub fn compute_cosmetic_sale_split(
+        _env: Env,
+        price: i128,
+        royalty_bps: i128,
+    ) -> Result<SaleSplit, MarketplaceError> {
+        nft_marketplace::compute_sale_split(price, royalty_bps)
+    }
+
+    /// Aggregate cosmetic-market statistics.
+    pub fn get_cosmetic_market_stats(env: Env) -> CosmeticMarketStats {
+        nft_marketplace::get_cosmetic_market_stats(&env)
+    }
+
+    /// Render a cosmetic for a storefront card without owning it.
+    pub fn preview_cosmetic(env: Env, skin_id: u64) -> Option<SkinPreview> {
+        nft_marketplace::preview_cosmetic_listing(&env, skin_id)
+    }
+
+    /// Render a catalogue template by name.
+    pub fn preview_skin_template(env: Env, name: Symbol) -> Option<SkinPreview> {
+        skins::preview_template(&env, name)
+    }
+
+    /// All catalogue templates of one rarity tier.
+    pub fn get_templates_by_rarity(env: Env, rarity: SkinRarity) -> Vec<SkinTemplate> {
+        skins::get_templates_by_rarity(&env, rarity)
+    }
+
+    /// Weighted rarity roll from a caller-supplied seed.
+    pub fn roll_skin_rarity(_env: Env, seed: u64) -> SkinRarity {
+        skins::roll_rarity(seed)
+    }
+
+    /// Catalogue composition by rarity.
+    pub fn get_skin_rarity_stats(env: Env) -> SkinRarityStats {
+        skins::get_rarity_stats(&env)
     }
 
     // ─── Economic Monitoring & Balancing ──────────────────────────────────

@@ -1,7 +1,28 @@
-//! Predefined skin templates and marketplace
+//! Predefined skin templates, rarity model and preview rendering.
+//!
+//! The template catalogue below is the source of truth for what a cosmetic is
+//! worth and how often it should appear. Issue #283 adds three things on top of
+//! it:
+//!
+//!   * a **rarity system** — floor prices and drop weights per tier, plus
+//!     [`roll_rarity`] for weighted rolls;
+//!   * **preview functionality** — [`preview_template`] and [`preview_skin`]
+//!     return everything a client needs to render a cosmetic (derived accent,
+//!     gradient strip, effect layers, thumbnail seed) without owning it and
+//!     without mutating state;
+//!   * the pricing floor the cosmetic marketplace in
+//!     [`crate::nft_marketplace`] enforces on every listing.
 
+use crate::ship_customization::{ShipSkin, SkinRarity};
 use soroban_sdk::{contracttype, symbol_short, Bytes, Env, Symbol, Vec};
-use crate::ship_customization::{SkinRarity, ShipSkin};
+
+// ─── Rarity model ─────────────────────────────────────────────────────────────
+
+/// Basis-point denominator for drop weights.
+pub const RARITY_WEIGHT_DENOMINATOR: u32 = 10_000;
+
+/// Number of gradient stops in a [`SkinPreview`].
+pub const PREVIEW_GRADIENT_STOPS: u32 = 5;
 
 #[contracttype]
 #[derive(Clone)]
@@ -11,6 +32,45 @@ pub struct SkinTemplate {
     pub color_primary: u32,
     pub color_secondary: u32,
     pub price: i128,
+}
+
+/// Everything needed to render a cosmetic without owning it.
+///
+/// Pure function of the template (or minted skin) — safe to call from
+/// read-only endpoints and cheap enough to batch for a gallery view.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkinPreview {
+    pub name: Symbol,
+    pub rarity: SkinRarity,
+    pub color_primary: u32,
+    pub color_secondary: u32,
+    /// Midpoint of the two base colours, for outlines and UI chrome.
+    pub color_accent: u32,
+    /// [`PREVIEW_GRADIENT_STOPS`] colours from primary to secondary.
+    pub gradient: Vec<u32>,
+    /// Visual effect layers the rarity unlocks (0 for Common … 3 for
+    /// Legendary). The client maps these onto shader passes.
+    pub effect_layers: u32,
+    /// Lowest price the cosmetic marketplace will accept for this rarity.
+    pub floor_price: i128,
+    /// How often the rarity drops, in basis points out of
+    /// [`RARITY_WEIGHT_DENOMINATOR`].
+    pub drop_weight_bps: u32,
+    /// Deterministic 8-byte seed for the client-side thumbnail generator, so
+    /// the same cosmetic always renders identically across sessions.
+    pub thumbnail_seed: Bytes,
+}
+
+/// Catalogue composition, for balance dashboards.
+#[contracttype]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SkinRarityStats {
+    pub common: u32,
+    pub rare: u32,
+    pub epic: u32,
+    pub legendary: u32,
+    pub total: u32,
 }
 
 /// Get all available skin templates
@@ -378,6 +438,190 @@ pub fn get_skin_templates(env: &Env) -> Vec<SkinTemplate> {
     templates
 }
 
+// ─── Rarity system (Issue #283) ───────────────────────────────────────────────
+
+/// Lowest price the cosmetic marketplace accepts for `rarity`.
+///
+/// Matches the catalogue's mint price, so a cosmetic can never be resold below
+/// what it cost to create — that floor is what keeps the secondary market from
+/// undercutting the primary one.
+pub fn rarity_floor_price(rarity: &SkinRarity) -> i128 {
+    match rarity {
+        SkinRarity::Common => 100,
+        SkinRarity::Rare => 500,
+        SkinRarity::Epic => 2_000,
+        SkinRarity::Legendary => 10_000,
+    }
+}
+
+/// Drop weight for `rarity`, in basis points out of
+/// [`RARITY_WEIGHT_DENOMINATOR`]. The four weights sum to exactly the
+/// denominator, which [`roll_rarity`] relies on.
+pub fn rarity_drop_weight_bps(rarity: &SkinRarity) -> u32 {
+    match rarity {
+        SkinRarity::Common => 6_000,
+        SkinRarity::Rare => 3_000,
+        SkinRarity::Epic => 900,
+        SkinRarity::Legendary => 100,
+    }
+}
+
+/// Number of visual effect layers `rarity` unlocks.
+pub fn rarity_effect_layers(rarity: &SkinRarity) -> u32 {
+    match rarity {
+        SkinRarity::Common => 0,
+        SkinRarity::Rare => 1,
+        SkinRarity::Epic => 2,
+        SkinRarity::Legendary => 3,
+    }
+}
+
+/// Pick a rarity from `seed` using the weights in [`rarity_drop_weight_bps`].
+///
+/// Deterministic: the same seed always yields the same rarity, so a caller can
+/// derive a roll from any on-chain entropy source and have it be verifiable.
+pub fn roll_rarity(seed: u64) -> SkinRarity {
+    let roll = (seed % RARITY_WEIGHT_DENOMINATOR as u64) as u32;
+
+    let common = rarity_drop_weight_bps(&SkinRarity::Common);
+    let rare = common + rarity_drop_weight_bps(&SkinRarity::Rare);
+    let epic = rare + rarity_drop_weight_bps(&SkinRarity::Epic);
+
+    if roll < common {
+        SkinRarity::Common
+    } else if roll < rare {
+        SkinRarity::Rare
+    } else if roll < epic {
+        SkinRarity::Epic
+    } else {
+        SkinRarity::Legendary
+    }
+}
+
+/// Composition of the template catalogue by rarity.
+pub fn get_rarity_stats(env: &Env) -> SkinRarityStats {
+    let templates = get_skin_templates(env);
+    let mut stats = SkinRarityStats {
+        common: 0,
+        rare: 0,
+        epic: 0,
+        legendary: 0,
+        total: templates.len(),
+    };
+
+    for template in templates.iter() {
+        match template.rarity {
+            SkinRarity::Common => stats.common += 1,
+            SkinRarity::Rare => stats.rare += 1,
+            SkinRarity::Epic => stats.epic += 1,
+            SkinRarity::Legendary => stats.legendary += 1,
+        }
+    }
+
+    stats
+}
+
+/// Look up a template by its `name` symbol.
+pub fn get_template(env: &Env, name: Symbol) -> Option<SkinTemplate> {
+    get_skin_templates(env)
+        .iter()
+        .find(|t| t.name == name)
+}
+
+/// All templates of one rarity tier.
+pub fn get_templates_by_rarity(env: &Env, rarity: SkinRarity) -> Vec<SkinTemplate> {
+    let mut matching = Vec::new(env);
+    for template in get_skin_templates(env).iter() {
+        if template.rarity == rarity {
+            matching.push_back(template);
+        }
+    }
+    matching
+}
+
+// ─── Preview rendering (Issue #283) ───────────────────────────────────────────
+
+/// One channel of a linear interpolation between two packed RGB colours.
+fn lerp_channel(from: u32, to: u32, shift: u32, step: u32, steps: u32) -> u32 {
+    let a = ((from >> shift) & 0xFF) as i64;
+    let b = ((to >> shift) & 0xFF) as i64;
+    let value = a + ((b - a) * step as i64) / steps as i64;
+    ((value as u32) & 0xFF) << shift
+}
+
+/// Interpolate `step/steps` of the way from `from` to `to`.
+fn lerp_color(from: u32, to: u32, step: u32, steps: u32) -> u32 {
+    lerp_channel(from, to, 16, step, steps)
+        | lerp_channel(from, to, 8, step, steps)
+        | lerp_channel(from, to, 0, step, steps)
+}
+
+/// Build the preview payload for an arbitrary colour pair and rarity.
+///
+/// Shared by [`preview_template`] and [`preview_skin`] so a catalogue entry and
+/// a minted NFT of the same cosmetic always preview identically.
+pub fn build_preview(
+    env: &Env,
+    name: Symbol,
+    rarity: SkinRarity,
+    color_primary: u32,
+    color_secondary: u32,
+) -> SkinPreview {
+    let mut gradient = Vec::new(env);
+    let last_stop = PREVIEW_GRADIENT_STOPS - 1;
+    for step in 0..PREVIEW_GRADIENT_STOPS {
+        gradient.push_back(lerp_color(
+            color_primary,
+            color_secondary,
+            step,
+            last_stop,
+        ));
+    }
+
+    // The seed mixes both colours and the rarity's layer count so visually
+    // distinct cosmetics never collide on the same thumbnail.
+    let mix = (color_primary as u64) << 32
+        | (color_secondary as u64 ^ (rarity_effect_layers(&rarity) as u64) << 24);
+    let thumbnail_seed = Bytes::from_array(env, &mix.to_be_bytes());
+
+    SkinPreview {
+        name,
+        color_primary,
+        color_secondary,
+        color_accent: lerp_color(color_primary, color_secondary, 1, 2),
+        gradient,
+        effect_layers: rarity_effect_layers(&rarity),
+        floor_price: rarity_floor_price(&rarity),
+        drop_weight_bps: rarity_drop_weight_bps(&rarity),
+        rarity,
+        thumbnail_seed,
+    }
+}
+
+/// Preview a catalogue template by name, before buying or minting it.
+pub fn preview_template(env: &Env, name: Symbol) -> Option<SkinPreview> {
+    let template = get_template(env, name)?;
+    Some(build_preview(
+        env,
+        template.name,
+        template.rarity,
+        template.color_primary,
+        template.color_secondary,
+    ))
+}
+
+/// Preview a minted skin NFT — the same payload as [`preview_template`], but
+/// resolved from on-chain skin state so marketplace listings can be rendered.
+pub fn preview_skin(env: &Env, skin: &ShipSkin) -> SkinPreview {
+    build_preview(
+        env,
+        skin.name.clone(),
+        skin.rarity.clone(),
+        skin.color_primary,
+        skin.color_secondary,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -393,7 +637,7 @@ mod tests {
     fn test_rarity_pricing() {
         let env = Env::default();
         let templates = get_skin_templates(&env);
-        
+
         for i in 0..templates.len() {
             let t = templates.get(i).unwrap();
             match t.rarity {
@@ -403,5 +647,231 @@ mod tests {
                 SkinRarity::Legendary => assert_eq!(t.price, 10000),
             }
         }
+    }
+
+    // ── Rarity system (Issue #283) ────────────────────────────────────────
+
+    #[test]
+    fn floor_price_matches_the_catalogue_price() {
+        let env = Env::default();
+        for template in get_skin_templates(&env).iter() {
+            assert_eq!(
+                rarity_floor_price(&template.rarity),
+                template.price,
+                "catalogue price and marketplace floor must not drift apart"
+            );
+        }
+    }
+
+    #[test]
+    fn floor_prices_increase_with_rarity() {
+        assert!(
+            rarity_floor_price(&SkinRarity::Common) < rarity_floor_price(&SkinRarity::Rare)
+        );
+        assert!(rarity_floor_price(&SkinRarity::Rare) < rarity_floor_price(&SkinRarity::Epic));
+        assert!(
+            rarity_floor_price(&SkinRarity::Epic) < rarity_floor_price(&SkinRarity::Legendary)
+        );
+    }
+
+    #[test]
+    fn drop_weights_sum_to_the_denominator() {
+        let total = rarity_drop_weight_bps(&SkinRarity::Common)
+            + rarity_drop_weight_bps(&SkinRarity::Rare)
+            + rarity_drop_weight_bps(&SkinRarity::Epic)
+            + rarity_drop_weight_bps(&SkinRarity::Legendary);
+        assert_eq!(total, RARITY_WEIGHT_DENOMINATOR);
+    }
+
+    #[test]
+    fn drop_weights_decrease_with_rarity() {
+        assert!(
+            rarity_drop_weight_bps(&SkinRarity::Common)
+                > rarity_drop_weight_bps(&SkinRarity::Rare)
+        );
+        assert!(
+            rarity_drop_weight_bps(&SkinRarity::Rare) > rarity_drop_weight_bps(&SkinRarity::Epic)
+        );
+        assert!(
+            rarity_drop_weight_bps(&SkinRarity::Epic)
+                > rarity_drop_weight_bps(&SkinRarity::Legendary)
+        );
+    }
+
+    #[test]
+    fn roll_rarity_respects_the_weight_boundaries() {
+        assert_eq!(roll_rarity(0), SkinRarity::Common);
+        assert_eq!(roll_rarity(5_999), SkinRarity::Common);
+        assert_eq!(roll_rarity(6_000), SkinRarity::Rare);
+        assert_eq!(roll_rarity(8_999), SkinRarity::Rare);
+        assert_eq!(roll_rarity(9_000), SkinRarity::Epic);
+        assert_eq!(roll_rarity(9_899), SkinRarity::Epic);
+        assert_eq!(roll_rarity(9_900), SkinRarity::Legendary);
+        assert_eq!(roll_rarity(9_999), SkinRarity::Legendary);
+    }
+
+    #[test]
+    fn roll_rarity_is_deterministic_and_wraps() {
+        assert_eq!(roll_rarity(12_345), roll_rarity(12_345));
+        // Seeds are reduced modulo the denominator.
+        assert_eq!(roll_rarity(10_000), roll_rarity(0));
+        assert_eq!(roll_rarity(u64::MAX), roll_rarity(u64::MAX % 10_000));
+    }
+
+    #[test]
+    fn roll_rarity_produces_the_expected_distribution() {
+        let mut counts = [0u32; 4];
+        for seed in 0..RARITY_WEIGHT_DENOMINATOR as u64 {
+            match roll_rarity(seed) {
+                SkinRarity::Common => counts[0] += 1,
+                SkinRarity::Rare => counts[1] += 1,
+                SkinRarity::Epic => counts[2] += 1,
+                SkinRarity::Legendary => counts[3] += 1,
+            }
+        }
+        // Sweeping every residue reproduces the weights exactly.
+        assert_eq!(counts[0], rarity_drop_weight_bps(&SkinRarity::Common));
+        assert_eq!(counts[1], rarity_drop_weight_bps(&SkinRarity::Rare));
+        assert_eq!(counts[2], rarity_drop_weight_bps(&SkinRarity::Epic));
+        assert_eq!(counts[3], rarity_drop_weight_bps(&SkinRarity::Legendary));
+    }
+
+    #[test]
+    fn effect_layers_increase_with_rarity() {
+        assert_eq!(rarity_effect_layers(&SkinRarity::Common), 0);
+        assert_eq!(rarity_effect_layers(&SkinRarity::Rare), 1);
+        assert_eq!(rarity_effect_layers(&SkinRarity::Epic), 2);
+        assert_eq!(rarity_effect_layers(&SkinRarity::Legendary), 3);
+    }
+
+    #[test]
+    fn rarity_stats_account_for_every_template() {
+        let env = Env::default();
+        let stats = get_rarity_stats(&env);
+        assert_eq!(
+            stats.common + stats.rare + stats.epic + stats.legendary,
+            stats.total
+        );
+        assert!(stats.legendary > 0 && stats.legendary < stats.common);
+    }
+
+    // ── Catalogue lookup ──────────────────────────────────────────────────
+
+    #[test]
+    fn templates_can_be_looked_up_by_name() {
+        let env = Env::default();
+        let found = get_template(&env, symbol_short!("void")).unwrap();
+        assert_eq!(found.rarity, SkinRarity::Legendary);
+        assert!(get_template(&env, symbol_short!("nope")).is_none());
+    }
+
+    #[test]
+    fn templates_can_be_filtered_by_rarity() {
+        let env = Env::default();
+        let legendary = get_templates_by_rarity(&env, SkinRarity::Legendary);
+        assert_eq!(legendary.len(), get_rarity_stats(&env).legendary);
+        for template in legendary.iter() {
+            assert_eq!(template.rarity, SkinRarity::Legendary);
+        }
+    }
+
+    // ── Preview (Issue #283) ──────────────────────────────────────────────
+
+    #[test]
+    fn preview_exposes_gradient_accent_and_pricing() {
+        let env = Env::default();
+        let preview = preview_template(&env, symbol_short!("flame")).unwrap();
+
+        assert_eq!(preview.rarity, SkinRarity::Rare);
+        assert_eq!(preview.gradient.len(), PREVIEW_GRADIENT_STOPS);
+        assert_eq!(preview.floor_price, rarity_floor_price(&SkinRarity::Rare));
+        assert_eq!(
+            preview.drop_weight_bps,
+            rarity_drop_weight_bps(&SkinRarity::Rare)
+        );
+        assert_eq!(preview.effect_layers, 1);
+        assert_eq!(preview.thumbnail_seed.len(), 8);
+    }
+
+    #[test]
+    fn preview_gradient_runs_from_primary_to_secondary() {
+        let env = Env::default();
+        let preview = build_preview(
+            &env,
+            symbol_short!("test"),
+            SkinRarity::Epic,
+            0x000000,
+            0xFFFFFF,
+        );
+
+        assert_eq!(preview.gradient.get(0).unwrap(), 0x000000);
+        assert_eq!(
+            preview.gradient.get(PREVIEW_GRADIENT_STOPS - 1).unwrap(),
+            0xFFFFFF
+        );
+        // Midpoint of black → white is mid grey on every channel.
+        assert_eq!(preview.gradient.get(2).unwrap(), 0x7F7F7F);
+        assert_eq!(preview.color_accent, 0x7F7F7F);
+    }
+
+    #[test]
+    fn preview_handles_a_descending_gradient() {
+        let env = Env::default();
+        let preview = build_preview(
+            &env,
+            symbol_short!("test"),
+            SkinRarity::Common,
+            0xFFFFFF,
+            0x000000,
+        );
+
+        assert_eq!(preview.gradient.get(0).unwrap(), 0xFFFFFF);
+        assert_eq!(preview.gradient.get(2).unwrap(), 0x808080);
+        assert_eq!(
+            preview.gradient.get(PREVIEW_GRADIENT_STOPS - 1).unwrap(),
+            0x000000
+        );
+    }
+
+    #[test]
+    fn preview_is_deterministic_but_distinguishes_cosmetics() {
+        let env = Env::default();
+        let a = preview_template(&env, symbol_short!("void")).unwrap();
+        let b = preview_template(&env, symbol_short!("void")).unwrap();
+        let c = preview_template(&env, symbol_short!("stellar")).unwrap();
+
+        assert_eq!(a, b, "previews are pure functions of the template");
+        assert_ne!(a.thumbnail_seed, c.thumbnail_seed);
+    }
+
+    #[test]
+    fn preview_of_an_unknown_template_is_none() {
+        let env = Env::default();
+        assert!(preview_template(&env, symbol_short!("ghost")).is_none());
+    }
+
+    #[test]
+    fn minted_skin_previews_match_their_template() {
+        let env = Env::default();
+        let template = get_template(&env, symbol_short!("plasma")).unwrap();
+
+        let skin = ShipSkin {
+            skin_id: 1,
+            owner: soroban_sdk::Address::from_str(
+                &env,
+                "GAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAWHF",
+            ),
+            name: template.name.clone(),
+            rarity: template.rarity.clone(),
+            color_primary: template.color_primary,
+            color_secondary: template.color_secondary,
+            metadata: Bytes::new(&env),
+            tradeable: true,
+        };
+
+        assert_eq!(
+            preview_skin(&env, &skin),
+            preview_template(&env, symbol_short!("plasma")).unwrap()
+        );
     }
 }
