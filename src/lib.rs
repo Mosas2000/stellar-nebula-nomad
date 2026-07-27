@@ -19,6 +19,8 @@ mod onboarding_tutorial;
 mod leaderboards;
 mod content_tools;
 mod pvp_combat;
+mod tournament;
+mod loot_system;
 
 pub mod events;
 mod batch_processor;

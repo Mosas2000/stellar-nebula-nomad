@@ -272,13 +272,15 @@ pub fn update_elo_rating(env: &Env, player: &Address, new_rating: u32) {
 }
 
 fn calculate_elo_change(winner_rating: u32, loser_rating: u32) -> (u32, u32) {
+    // `f64::powf`/`round` aren't available in this `#![no_std]` contract —
+    // `libm` provides the no_std-compatible equivalents.
     let expected_winner =
-        1.0 / (1.0 + 10.0_f64.powf((loser_rating as f64 - winner_rating as f64) / 400.0));
+        1.0 / (1.0 + libm::pow(10.0, (loser_rating as f64 - winner_rating as f64) / 400.0));
     let expected_loser =
-        1.0 / (1.0 + 10.0_f64.powf((winner_rating as f64 - loser_rating as f64) / 400.0));
+        1.0 / (1.0 + libm::pow(10.0, (winner_rating as f64 - loser_rating as f64) / 400.0));
 
-    let winner_change = (K_FACTOR as f64 * (1.0 - expected_winner)).round() as u32;
-    let loser_change = (K_FACTOR as f64 * (0.0 - expected_loser)).round().abs() as u32;
+    let winner_change = libm::round(K_FACTOR as f64 * (1.0 - expected_winner)) as u32;
+    let loser_change = libm::round(K_FACTOR as f64 * (0.0 - expected_loser)).abs() as u32;
 
     (winner_change, loser_change)
 }

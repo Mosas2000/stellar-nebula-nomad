@@ -24,6 +24,9 @@ fuzz = ["soroban-sdk/testutils"]
 
 [dependencies]
 soroban-sdk = "22.0"
+# no_std-compatible math (pow/round/etc.) for ELO and other floating-point
+# calculations that plain core::f64 doesn't provide without std.
+libm = "0.2"
 
 [dev-dependencies]
 soroban-sdk = { version = "22.0", features = ["testutils"] }
