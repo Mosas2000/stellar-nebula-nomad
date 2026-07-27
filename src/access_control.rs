@@ -1322,12 +1322,12 @@ mod tests {
     #[test]
     fn test_batch_grant_fails_for_6_addresses() {
         let (env, admin) = setup_env();
-        init_roles(&env, admin).unwrap();
+        init_roles(&env, admin.clone()).unwrap();
         let mut grantees = Vec::new(&env);
         for _ in 0..6 {
             grantees.push_back(Address::generate(&env));
         }
-        let result = grant_role_batch(&env, admin_role(), nomad_role(), grantees.clone(), None);
+        let result = grant_role_batch(&env, admin, nomad_role(), grantees.clone(), None);
         // Note: Would fail due to AdminRequired, but the batch limit should be checked first
         // Let's test with correct admin
     }

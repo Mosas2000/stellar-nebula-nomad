@@ -41,7 +41,8 @@ pub mod ship_upgrade;
 pub mod test_helpers;
 mod treasure_vault;
 
-mod yield_farming;
+pub mod staking;
+pub mod yield_farming;
 mod governance;
 mod theme_customizer;
 mod indexer_callbacks;
@@ -97,6 +98,8 @@ pub mod achievements;
 mod ship_customization;
 mod skins;
 mod crafting;
+pub mod clan_wars;
+pub mod mini_games;
 
 // Retention, economy, content and cosmetic-marketplace systems
 // (Issues #280, #281, #282, #283).
@@ -340,8 +343,30 @@ pub use event_scheduler::{
 pub use ship_customization::{
     mint_skin, apply_skin, get_ship_skin, get_owner_skins, transfer_skin,
     ShipSkin, SkinRarity, SkinError,
+    create_skin_pack, open_skin_pack, fuse_skins,
+    create_auction, place_bid, claim_auction,
+    SkinAuction, SkinPack, SkinFusionResult,
 };
-pub use skins::{get_skin_templates, SkinTemplate};
+pub use skins::{
+    get_skin_templates, SkinTemplate,
+    get_full_catalogue, search_templates, get_templates_by_price_range,
+    SkinCatalogueEntry,
+};
+
+pub use clan_wars::{
+    declare_war, fight_battle, claim_ceasefire,
+    get_war, get_alliance_active_war, get_territory, get_alliance_territories, get_battle,
+    WarDeclaration, WarTerritory, BattleRecord, WarRewards, WarStatus, WarError,
+};
+
+pub use mini_games::{
+    start_mini_game, submit_mini_game_score, join_multiplayer_game,
+    create_daily_challenge, claim_daily_challenge,
+    get_leaderboard, reset_daily_plays,
+    MiniGameType, MiniGameSession, DailyChallenge,
+    PlayerMiniGameStats, MiniGameError,
+};
+pub use mini_games::LeaderboardEntry as MiniGameLeaderboardEntry;
 
 // ─── Daily Login Rewards (Issue #280) ─────────────────────────────────────
 pub use daily_rewards::{

@@ -888,8 +888,8 @@ mod tests {
         .unwrap();
 
         start_event(&env, admin.clone(), event_id).unwrap();
-        spawn_raid_boss(&env, admin, event_id, 1, 1).unwrap();
-        join_event(&env, player, event_id).unwrap();
+        spawn_raid_boss(&env, admin, event_id, 1, 1, 1).unwrap();
+        join_event(&env, player.clone(), event_id).unwrap();
 
         let remaining = deal_raid_damage(&env, player, event_id, 10).unwrap();
         assert_eq!(remaining, 0);

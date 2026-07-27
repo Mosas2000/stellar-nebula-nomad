@@ -106,7 +106,7 @@ pub fn unsubscribe_stream(env: &Env, subscriber: &Address) {
 mod tests {
     use super::*;
     use soroban_sdk::testutils::{Address as _, Events};
-    use soroban_sdk::{vec, IntoVal};
+    use soroban_sdk::{vec, IntoVal, TryFromVal};
 
     // ── Account info ──────────────────────────────────────────────────────────
 
@@ -128,14 +128,14 @@ mod tests {
 
         let events = env.events().all();
         assert!(!events.is_empty(), "expected at least one event");
-        let (topics, _data) = events.get(0).unwrap();
+        let (_contract_id, topics, _data) = events.get(0).unwrap();
         assert_eq!(
-            topics.get(0).unwrap(),
-            soroban_sdk::symbol_short!("horizon").into_val(&env)
+            soroban_sdk::Symbol::try_from_val(&env, &topics.get(0).unwrap()).unwrap(),
+            soroban_sdk::symbol_short!("horizon")
         );
         assert_eq!(
-            topics.get(1).unwrap(),
-            soroban_sdk::symbol_short!("query").into_val(&env)
+            soroban_sdk::Symbol::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+            soroban_sdk::symbol_short!("query")
         );
     }
 
@@ -161,10 +161,10 @@ mod tests {
 
         let events = env.events().all();
         assert!(!events.is_empty());
-        let (topics, _data) = events.get(0).unwrap();
+        let (_contract_id, topics, _data) = events.get(0).unwrap();
         assert_eq!(
-            topics.get(1).unwrap(),
-            soroban_sdk::symbol_short!("tx").into_val(&env)
+            soroban_sdk::Symbol::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+            soroban_sdk::symbol_short!("tx")
         );
     }
 
@@ -208,10 +208,10 @@ mod tests {
 
         let events = env.events().all();
         assert!(!events.is_empty());
-        let (topics, _data) = events.get(0).unwrap();
+        let (_contract_id, topics, _data) = events.get(0).unwrap();
         assert_eq!(
-            topics.get(1).unwrap(),
-            soroban_sdk::symbol_short!("stream").into_val(&env)
+            soroban_sdk::Symbol::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+            soroban_sdk::symbol_short!("stream")
         );
     }
 
@@ -235,10 +235,10 @@ mod tests {
 
         let events = env.events().all();
         assert!(!events.is_empty());
-        let (topics, _data) = events.get(0).unwrap();
+        let (_contract_id, topics, _data) = events.get(0).unwrap();
         assert_eq!(
-            topics.get(1).unwrap(),
-            soroban_sdk::symbol_short!("unsub").into_val(&env)
+            soroban_sdk::Symbol::try_from_val(&env, &topics.get(1).unwrap()).unwrap(),
+            soroban_sdk::symbol_short!("unsub")
         );
     }
 

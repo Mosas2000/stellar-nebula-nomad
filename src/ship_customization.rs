@@ -1,4 +1,7 @@
 //! Ship visual customization and skin NFT system
+//!
+//! Issue #291: Adds skin creation tools, marketplace trading enhancements,
+//! skin fusion/pack-opening mechanics, and auction support.
 
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Bytes, Env, Symbol, Vec};
 
@@ -11,6 +14,14 @@ pub enum SkinError {
     AlreadyApplied = 3,
     InvalidRarity = 4,
     SkinLimitReached = 5,
+    SkinPackEmpty = 6,
+    InvalidFusion = 7,
+    FusionLevelMax = 8,
+    NotEnoughSkins = 9,
+    AuctionNotFound = 10,
+    AuctionNotActive = 11,
+    BidTooLow = 12,
+    NotHighestBidder = 13,
 }
 
 #[contracttype]
@@ -42,6 +53,10 @@ pub enum SkinKey {
     Skin(u64),
     ShipSkin(u64),
     OwnerSkins(Address),
+    SkinAuction(u64),
+    SkinFusionLevel(u64),
+    SkinPackTemplate(u64),
+    SkinPackContents(u64),
 }
 
 fn next_skin_id(env: &Env) -> u64 {
@@ -127,6 +142,243 @@ pub fn get_owner_skins(env: &Env, owner: &Address) -> Vec<u64> {
         .persistent()
         .get(&SkinKey::OwnerSkins(owner.clone()))
         .unwrap_or_else(|| Vec::new(env))
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkinAuction {
+    pub skin_id: u64,
+    pub seller: Address,
+    pub starting_bid: i128,
+    pub highest_bid: i128,
+    pub highest_bidder: Option<Address>,
+    pub ends_at: u64,
+    pub buy_now_price: Option<i128>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkinPack {
+    pub pack_id: u64,
+    pub name: Symbol,
+    pub price: i128,
+    pub skin_count: u32,
+    pub guaranteed_rarity: u32,
+    pub contents: Vec<u32>,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq)]
+pub struct SkinFusionResult {
+    pub input_skin_ids: Vec<u64>,
+    pub output_skin_id: u64,
+    pub output_rarity: SkinRarity,
+}
+
+pub fn create_skin_pack(
+    env: &Env,
+    creator: &Address,
+    name: Symbol,
+    price: i128,
+    skin_count: u32,
+    guaranteed_rarity: SkinRarity,
+    contents: Vec<u32>,
+) -> Result<u64, SkinError> {
+    creator.require_auth();
+    let pack_id = next_skin_id(env);
+    let pack = SkinPack {
+        pack_id,
+        name,
+        price,
+        skin_count,
+        guaranteed_rarity: guaranteed_rarity as u32,
+        contents,
+    };
+    env.storage().persistent().set(&SkinKey::SkinPackTemplate(pack_id), &pack);
+    Ok(pack_id)
+}
+
+fn rarity_from_u32(val: u32) -> SkinRarity {
+    match val {
+        0 => SkinRarity::Common,
+        1 => SkinRarity::Rare,
+        2 => SkinRarity::Epic,
+        _ => SkinRarity::Legendary,
+    }
+}
+
+pub fn open_skin_pack(
+    env: &Env,
+    owner: &Address,
+    pack_id: u64,
+    seed: u64,
+) -> Result<Vec<ShipSkin>, SkinError> {
+    owner.require_auth();
+    let pack: SkinPack = env.storage().persistent()
+        .get(&SkinKey::SkinPackTemplate(pack_id))
+        .ok_or(SkinError::SkinPackEmpty)?;
+
+    let mut results = Vec::new(env);
+    let mut roll = seed;
+    for i in 0..pack.skin_count {
+        roll = roll.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        let rarity = if i == 0 && pack.guaranteed_rarity > 0 {
+            rarity_from_u32(pack.guaranteed_rarity)
+        } else {
+            crate::skins::roll_rarity(roll)
+        };
+        let color_primary = (roll as u32) & 0xFFFFFF;
+        let color_secondary = ((roll >> 24) as u32) & 0xFFFFFF;
+        let name = symbol_short!("pack");
+        let skin = mint_skin(env, owner, name, rarity, color_primary, color_secondary, Bytes::new(env))?;
+        results.push_back(skin);
+    }
+    Ok(results)
+}
+
+pub fn fuse_skins(
+    env: &Env,
+    owner: &Address,
+    skin_ids: Vec<u64>,
+) -> Result<SkinFusionResult, SkinError> {
+    owner.require_auth();
+    if skin_ids.len() < 3 {
+        return Err(SkinError::NotEnoughSkins);
+    }
+
+    let mut rarities: Vec<SkinRarity> = Vec::new(env);
+    for id in skin_ids.iter() {
+        let skin: ShipSkin = env.storage().persistent()
+            .get(&SkinKey::Skin(id))
+            .ok_or(SkinError::SkinNotFound)?;
+        if skin.owner != *owner {
+            return Err(SkinError::NotOwner);
+        }
+        rarities.push_back(skin.rarity.clone());
+    }
+
+    let base_rarity = rarities.get(0).unwrap();
+    for r in rarities.iter() {
+        if r != base_rarity {
+            return Err(SkinError::InvalidFusion);
+        }
+    }
+
+    let max_rarity = match base_rarity {
+        SkinRarity::Legendary => return Err(SkinError::FusionLevelMax),
+        SkinRarity::Epic => SkinRarity::Legendary,
+        SkinRarity::Rare => SkinRarity::Epic,
+        SkinRarity::Common => SkinRarity::Rare,
+    };
+
+    let input_ids: Vec<u64> = skin_ids.clone();
+    for id in input_ids.iter() {
+        let owner_skins: Vec<u64> = env.storage().persistent()
+            .get(&SkinKey::OwnerSkins(owner.clone()))
+            .unwrap_or_else(|| Vec::new(env));
+        let mut remaining = Vec::new(env);
+        for s in owner_skins.iter() {
+            if s != id {
+                remaining.push_back(s);
+            }
+        }
+        env.storage().persistent().set(&SkinKey::OwnerSkins(owner.clone()), &remaining);
+        env.storage().persistent().remove(&SkinKey::Skin(id));
+    }
+
+    let result_max_rarity = max_rarity.clone();
+    let new_skin = mint_skin(env, owner, symbol_short!("fusion"), result_max_rarity, 0xFFFFFF, 0x000000, Bytes::new(env))?;
+
+    env.storage().persistent().set(&SkinKey::SkinFusionLevel(new_skin.skin_id), &1u32);
+
+    Ok(SkinFusionResult {
+        input_skin_ids: skin_ids,
+        output_skin_id: new_skin.skin_id,
+        output_rarity: max_rarity,
+    })
+}
+
+pub fn create_auction(
+    env: &Env,
+    seller: &Address,
+    skin_id: u64,
+    starting_bid: i128,
+    duration_secs: u64,
+    buy_now_price: Option<i128>,
+) -> Result<u64, SkinError> {
+    seller.require_auth();
+    let skin: ShipSkin = env.storage().persistent()
+        .get(&SkinKey::Skin(skin_id))
+        .ok_or(SkinError::SkinNotFound)?;
+    if skin.owner != *seller {
+        return Err(SkinError::NotOwner);
+    }
+
+    let auction_id = next_skin_id(env);
+    let auction = SkinAuction {
+        skin_id,
+        seller: seller.clone(),
+        starting_bid,
+        highest_bid: 0,
+        highest_bidder: None,
+        ends_at: env.ledger().timestamp() + duration_secs,
+        buy_now_price,
+    };
+    env.storage().persistent().set(&SkinKey::SkinAuction(auction_id), &auction);
+    Ok(auction_id)
+}
+
+pub fn place_bid(
+    env: &Env,
+    bidder: &Address,
+    auction_id: u64,
+    bid_amount: i128,
+) -> Result<SkinAuction, SkinError> {
+    bidder.require_auth();
+    let mut auction: SkinAuction = env.storage().persistent()
+        .get(&SkinKey::SkinAuction(auction_id))
+        .ok_or(SkinError::AuctionNotFound)?;
+
+    if env.ledger().timestamp() >= auction.ends_at {
+        return Err(SkinError::AuctionNotActive);
+    }
+    if bid_amount < auction.starting_bid || bid_amount <= auction.highest_bid {
+        return Err(SkinError::BidTooLow);
+    }
+
+    auction.highest_bid = bid_amount;
+    auction.highest_bidder = Some(bidder.clone());
+    env.storage().persistent().set(&SkinKey::SkinAuction(auction_id), &auction);
+
+    env.events().publish(
+        (symbol_short!("skin"), symbol_short!("bid")),
+        (auction_id, bidder.clone(), bid_amount),
+    );
+    Ok(auction)
+}
+
+pub fn claim_auction(
+    env: &Env,
+    caller: &Address,
+    auction_id: u64,
+) -> Result<ShipSkin, SkinError> {
+    caller.require_auth();
+    let auction: SkinAuction = env.storage().persistent()
+        .get(&SkinKey::SkinAuction(auction_id))
+        .ok_or(SkinError::AuctionNotFound)?;
+
+    if env.ledger().timestamp() < auction.ends_at {
+        return Err(SkinError::AuctionNotActive);
+    }
+
+    let winner = auction.highest_bidder.ok_or(SkinError::AuctionNotActive)?;
+    if *caller != winner && *caller != auction.seller {
+        return Err(SkinError::NotHighestBidder);
+    }
+
+    env.storage().persistent().remove(&SkinKey::SkinAuction(auction_id));
+    let skin = transfer_skin_internal(env, auction.skin_id, &winner)?;
+    Ok(skin)
 }
 
 /// Transfer skin ownership
