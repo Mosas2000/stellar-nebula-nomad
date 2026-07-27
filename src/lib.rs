@@ -3354,4 +3354,209 @@ impl NebulaNomadContract {
         player.require_auth();
         mobile_views::subscribe_mobile_events(&env, &player);
     }
+
+    // ── Gas Sponsorship (Issue #286) ──────────────────────────────────────────
+    // Pre-existing gap: this whole module was never wired as real invokable
+    // entry points before this batch of fixes — only reachable internally
+    // via the `pub use gas_sponsor::{...}` re-export below, never callable
+    // by an external transaction. Wiring all of it, not just the functions
+    // added for #286, since none of it was wired.
+
+    pub fn initialize_sponsorship(
+        env: Env,
+        admin: Address,
+        initial_fund: i128,
+    ) -> Result<(), SponsorError> {
+        gas_sponsor::initialize(&env, &admin, initial_fund)
+    }
+
+    pub fn sponsor_first_scan(env: Env, player: Address) -> Result<i128, SponsorError> {
+        gas_sponsor::sponsor_first_scan(&env, &player)
+    }
+
+    /// View-only eligibility check — no auth required, safe to call via
+    /// `simulateTransaction` from an off-chain relayer before it builds a
+    /// real fee-bump transaction.
+    pub fn check_sponsorship_eligibility(env: Env, player: Address) -> Result<(), SponsorError> {
+        gas_sponsor::check_sponsorship_eligibility(&env, &player)
+    }
+
+    pub fn claim_sponsorship_fund(env: Env, admin: Address, amount: i128) -> Result<i128, SponsorError> {
+        gas_sponsor::claim_sponsorship_fund(&env, &admin, amount)
+    }
+
+    pub fn has_been_sponsored(env: Env, player: Address) -> bool {
+        gas_sponsor::has_been_sponsored(&env, &player)
+    }
+
+    pub fn get_sponsorship_fund_balance(env: Env) -> i128 {
+        gas_sponsor::get_fund_balance(&env)
+    }
+
+    pub fn get_sponsorship_daily_count(env: Env) -> u32 {
+        gas_sponsor::get_daily_count(&env)
+    }
+
+    pub fn get_sponsorship_remaining_slots(env: Env) -> u32 {
+        gas_sponsor::get_remaining_daily_slots(&env)
+    }
+
+    pub fn get_sponsorship_admin(env: Env) -> Option<Address> {
+        gas_sponsor::get_admin(&env)
+    }
+
+    pub fn get_sponsorship_config(env: Env) -> Option<SponsorConfig> {
+        gas_sponsor::get_config(&env)
+    }
+
+    pub fn update_sponsorship_config(
+        env: Env,
+        admin: Address,
+        min_threshold: i128,
+        sponsor_amount: i128,
+        daily_cap: u32,
+        per_user_cap: i128,
+        per_user_daily_cap: u32,
+    ) -> Result<SponsorConfig, SponsorError> {
+        gas_sponsor::update_config(
+            &env,
+            &admin,
+            min_threshold,
+            sponsor_amount,
+            daily_cap,
+            per_user_cap,
+            per_user_daily_cap,
+        )
+    }
+
+    pub fn mark_sponsorship_profile_valid(env: Env, player: Address) {
+        gas_sponsor::mark_profile_verified(&env, &player);
+    }
+
+    pub fn get_sponsorship_user_lifetime(env: Env, player: Address) -> i128 {
+        gas_sponsor::get_user_lifetime_sponsored(&env, &player)
+    }
+
+    pub fn get_sponsorship_user_daily_count(env: Env, player: Address) -> u32 {
+        gas_sponsor::get_user_daily_count(&env, &player)
+    }
+
+    pub fn get_sponsorship_pool(env: Env) -> Vec<gas_sponsor::SponsorshipRecord> {
+        gas_sponsor::get_sponsorship_pool(&env)
+    }
+
+    pub fn get_sponsorship_pool_size(env: Env) -> u32 {
+        gas_sponsor::get_sponsorship_pool_size(&env)
+    }
+
+    // ── Tournament System (Issue #284) ────────────────────────────────────────
+
+    pub fn create_tournament(
+        env: Env,
+        organizer: Address,
+        resource_type: resource_minter::ResourceType,
+        entry_fee: u64,
+        max_players: u32,
+        registration_window_secs: u64,
+        prize_distribution_bps: Vec<u32>,
+    ) -> Result<u64, tournament::TournamentError> {
+        tournament::create_tournament(
+            &env,
+            &organizer,
+            resource_type,
+            entry_fee,
+            max_players,
+            registration_window_secs,
+            prize_distribution_bps,
+        )
+    }
+
+    pub fn get_tournament(env: Env, tournament_id: u64) -> Result<tournament::Tournament, tournament::TournamentError> {
+        tournament::get_tournament(&env, tournament_id)
+    }
+
+    pub fn get_tournament_registrants(env: Env, tournament_id: u64) -> Vec<Address> {
+        tournament::get_registrants(&env, tournament_id)
+    }
+
+    pub fn register_for_tournament(env: Env, player: Address, tournament_id: u64) -> Result<u32, tournament::TournamentError> {
+        tournament::register_for_tournament(&env, &player, tournament_id)
+    }
+
+    pub fn start_tournament(env: Env, caller: Address, tournament_id: u64) -> Result<(), tournament::TournamentError> {
+        tournament::start_tournament(&env, &caller, tournament_id)
+    }
+
+    pub fn get_tournament_bracket_round(
+        env: Env,
+        tournament_id: u64,
+        round: u32,
+    ) -> Vec<tournament::BracketMatch> {
+        tournament::get_bracket_round(&env, tournament_id, round)
+    }
+
+    /// Pull a finished `pvp_combat` combat's result into its tournament
+    /// bracket match, advancing the round (or finishing the tournament and
+    /// paying out prizes) once every match in the round has resolved.
+    pub fn report_tournament_match_result(
+        env: Env,
+        tournament_id: u64,
+        round: u32,
+        match_index: u32,
+    ) -> Result<(), tournament::TournamentError> {
+        tournament::report_match_result(&env, tournament_id, round, match_index)
+    }
+
+    // ── Loot Box System (Issue #287) ──────────────────────────────────────────
+
+    pub fn set_loot_admin(env: Env, admin: Address) -> Result<(), loot_system::LootError> {
+        loot_system::set_loot_admin(&env, &admin)
+    }
+
+    pub fn create_loot_box_type(
+        env: Env,
+        admin: Address,
+        name: String,
+        cost_loot_tokens: u64,
+        entries: Vec<loot_system::LootEntry>,
+    ) -> Result<u64, loot_system::LootError> {
+        loot_system::create_box_type(&env, &admin, name, cost_loot_tokens, entries)
+    }
+
+    pub fn get_loot_box_type(env: Env, box_type_id: u64) -> Result<loot_system::LootBoxType, loot_system::LootError> {
+        loot_system::get_box_type(&env, box_type_id)
+    }
+
+    pub fn get_loot_token_balance(env: Env, player: Address) -> u64 {
+        loot_system::get_loot_token_balance(&env, &player)
+    }
+
+    /// Admin-gated: the *only* way `LootToken` balance ever increases (via
+    /// achievement/tournament completion etc. in game logic) — there is no
+    /// purchase path, by design (Issue #287's "no real money" requirement).
+    pub fn grant_loot_tokens(env: Env, admin: Address, player: Address, amount: u64) -> Result<u64, loot_system::LootError> {
+        loot_system::grant_loot_tokens(&env, &admin, &player, amount)
+    }
+
+    pub fn commit_loot_open(
+        env: Env,
+        player: Address,
+        box_type_id: u64,
+        player_seed_hash: BytesN<32>,
+    ) -> Result<u64, loot_system::LootError> {
+        loot_system::commit_loot_open(&env, &player, box_type_id, player_seed_hash)
+    }
+
+    pub fn reveal_loot_open(
+        env: Env,
+        player: Address,
+        request_id: u64,
+        player_seed: BytesN<32>,
+    ) -> Result<loot_system::LootResult, loot_system::LootError> {
+        loot_system::reveal_loot_open(&env, &player, request_id, player_seed)
+    }
+
+    pub fn get_loot_open_request(env: Env, request_id: u64) -> Result<loot_system::OpenRequest, loot_system::LootError> {
+        loot_system::get_open_request(&env, request_id)
+    }
 }
