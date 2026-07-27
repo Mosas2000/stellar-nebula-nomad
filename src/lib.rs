@@ -358,6 +358,15 @@ pub use quest_system::{
     QuestStatus, MAX_ACTIVE_QUESTS, MAX_BRANCHES_PER_NODE, MAX_CHAIN_LENGTH,
 };
 
+// ─── Cosmetic NFT Marketplace (Issue #283) ────────────────────────────────
+pub use nft_marketplace::{
+    CosmeticListing, CosmeticMarketStats, CreatorRoyalty, MarketplaceError, SaleSplit,
+    CREATOR_ROYALTY_BPS_DEFAULT, MAX_CREATOR_ROYALTY_BPS, PLATFORM_FEE_BPS,
+};
+pub use skins::{
+    rarity_drop_weight_bps, rarity_floor_price, roll_rarity, SkinPreview, SkinRarityStats,
+};
+
 pub use economics::monitor::{
     initialize_monitor, update_supply_metrics, track_resource_activity,
     get_metrics, get_resource_metrics, calculate_inflation_rate,
@@ -3056,6 +3065,108 @@ impl NebulaNomadContract {
     /// IDs of the player's currently active quests.
     pub fn get_active_quest_ids(env: Env, player: Address) -> Vec<u64> {
         quest_system::get_active_quests(&env, &player)
+    }
+
+    // ─── Cosmetic NFT Marketplace (Issue #283) ────────────────────────────
+
+    /// List a cosmetic skin NFT for sale at or above its rarity floor.
+    pub fn list_cosmetic(
+        env: Env,
+        seller: Address,
+        skin_id: u64,
+        price: i128,
+    ) -> Result<CosmeticListing, MarketplaceError> {
+        nft_marketplace::list_cosmetic(&env, &seller, skin_id, price)
+    }
+
+    /// Purchase a listed cosmetic, settling creator royalty and platform fee.
+    pub fn buy_cosmetic(
+        env: Env,
+        buyer: Address,
+        skin_id: u64,
+    ) -> Result<SaleSplit, MarketplaceError> {
+        nft_marketplace::buy_cosmetic(&env, &buyer, skin_id)
+    }
+
+    /// Cancel an open cosmetic listing, releasing the skin from escrow.
+    pub fn cancel_cosmetic_listing(
+        env: Env,
+        seller: Address,
+        skin_id: u64,
+    ) -> Result<(), MarketplaceError> {
+        nft_marketplace::cancel_cosmetic_listing(&env, &seller, skin_id)
+    }
+
+    /// The open cosmetic listing for a skin, if any.
+    pub fn get_cosmetic_listing(env: Env, skin_id: u64) -> Option<CosmeticListing> {
+        nft_marketplace::get_cosmetic_listing(&env, skin_id)
+    }
+
+    /// Register a perpetual creator royalty on a cosmetic (owner only, once).
+    pub fn register_creator_royalty(
+        env: Env,
+        creator: Address,
+        skin_id: u64,
+        bps: i128,
+    ) -> Result<CreatorRoyalty, MarketplaceError> {
+        nft_marketplace::register_creator_royalty(&env, &creator, skin_id, bps)
+    }
+
+    /// The registered creator royalty for a cosmetic.
+    pub fn get_creator_royalty(env: Env, skin_id: u64) -> Option<CreatorRoyalty> {
+        nft_marketplace::get_creator_royalty(&env, skin_id)
+    }
+
+    /// Royalties credited to a creator and not yet withdrawn.
+    pub fn get_creator_earnings(env: Env, creator: Address) -> i128 {
+        nft_marketplace::get_creator_earnings(&env, &creator)
+    }
+
+    /// Withdraw all accrued creator royalties.
+    pub fn withdraw_creator_earnings(
+        env: Env,
+        creator: Address,
+    ) -> Result<i128, MarketplaceError> {
+        nft_marketplace::withdraw_creator_earnings(&env, &creator)
+    }
+
+    /// How a given price would be split, before listing.
+    pub fn compute_cosmetic_sale_split(
+        _env: Env,
+        price: i128,
+        royalty_bps: i128,
+    ) -> Result<SaleSplit, MarketplaceError> {
+        nft_marketplace::compute_sale_split(price, royalty_bps)
+    }
+
+    /// Aggregate cosmetic-market statistics.
+    pub fn get_cosmetic_market_stats(env: Env) -> CosmeticMarketStats {
+        nft_marketplace::get_cosmetic_market_stats(&env)
+    }
+
+    /// Render a cosmetic for a storefront card without owning it.
+    pub fn preview_cosmetic(env: Env, skin_id: u64) -> Option<SkinPreview> {
+        nft_marketplace::preview_cosmetic_listing(&env, skin_id)
+    }
+
+    /// Render a catalogue template by name.
+    pub fn preview_skin_template(env: Env, name: Symbol) -> Option<SkinPreview> {
+        skins::preview_template(&env, name)
+    }
+
+    /// All catalogue templates of one rarity tier.
+    pub fn get_templates_by_rarity(env: Env, rarity: SkinRarity) -> Vec<SkinTemplate> {
+        skins::get_templates_by_rarity(&env, rarity)
+    }
+
+    /// Weighted rarity roll from a caller-supplied seed.
+    pub fn roll_skin_rarity(_env: Env, seed: u64) -> SkinRarity {
+        skins::roll_rarity(seed)
+    }
+
+    /// Catalogue composition by rarity.
+    pub fn get_skin_rarity_stats(env: Env) -> SkinRarityStats {
+        skins::get_rarity_stats(&env)
     }
 
     // ─── Economic Monitoring & Balancing ──────────────────────────────────
