@@ -465,12 +465,12 @@ mod tests {
     fn test_captcha_solve_clears_gate() {
         let (env, player) = setup();
 
-        let answer_hash = env.crypto().sha256(&soroban_sdk::Bytes::from_slice(&env, &[42]));
+        let answer_hash: soroban_sdk::BytesN<32> = env.crypto().sha256(&soroban_sdk::Bytes::from_slice(&env, &[42])).into();
         let challenge_id = issue_captcha(&env, &player, answer_hash.clone(), 300).unwrap();
 
         // Player needs to pass the hash of their answer.
         // For this test, the "answer" is [42], and its hash matches.
-        assert!(solve_captcha(env.clone(), player.clone(), challenge_id, answer_hash).is_ok());
+        assert!(solve_captcha(&env, player.clone(), challenge_id, answer_hash).is_ok());
         assert!(!is_captcha_required(&env, &player));
     }
 

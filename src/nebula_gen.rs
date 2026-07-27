@@ -91,7 +91,7 @@ pub struct Anomaly {
 }
 
 #[contracttype]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct NebulaLayout {
     pub ship_id:      u64,
     pub region_id:    u64,
@@ -688,7 +688,7 @@ mod tests {
     fn test_has_anomaly_valid() {
         let (env, client, _) = setup();
         gen_layout(&env, &client, 5);
-        assert_eq!(client.has_anomaly(&5u64, &0u32), Ok(true));
+        assert!(client.has_anomaly(&5u64, &0u32));
     }
 
     // ── Determinism ───────────────────────────────────────────
@@ -733,9 +733,9 @@ mod tests {
         let (env, client, _) = setup();
         gen_layout(&env, &client, 7);
         env.ledger().set(ledger_info(2, 1_000 + SHORT_TTL + 1));
-        assert_eq!(client.clean_expired_layout(&7u64), Ok(true));
+        assert!(client.clean_expired_layout(&7u64));
         // Cleaning an already-removed ship reports false
-        assert_eq!(client.clean_expired_layout(&7u64), Ok(false));
+        assert!(!client.clean_expired_layout(&7u64));
     }
 
     #[test]
@@ -749,7 +749,7 @@ mod tests {
         ships.push_back(10u64);
         ships.push_back(11u64);
         ships.push_back(12u64);
-        assert_eq!(client.clean_expired_layouts(&ships), Ok(3u32));
+        assert_eq!(client.clean_expired_layouts(&ships), 3u32);
     }
 
     #[test]
@@ -757,7 +757,7 @@ mod tests {
         let (env, client, _) = setup();
         gen_layout(&env, &client, 7);
         // Extend TTL well past elapsed time; layout must stay live
-        client.update_layout_ttl(&1_000_000u64).unwrap();
+        client.update_layout_ttl(&1_000_000u64);
         env.ledger().set(ledger_info(2, 1_000 + SHORT_TTL + 1));
         assert!(client.get_layout(&7u64).is_some());
     }

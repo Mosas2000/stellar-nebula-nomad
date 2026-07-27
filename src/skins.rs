@@ -25,7 +25,7 @@ pub const RARITY_WEIGHT_DENOMINATOR: u32 = 10_000;
 pub const PREVIEW_GRADIENT_STOPS: u32 = 5;
 
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SkinTemplate {
     pub name: Symbol,
     pub rarity: SkinRarity,
@@ -438,7 +438,51 @@ pub fn get_skin_templates(env: &Env) -> Vec<SkinTemplate> {
     templates
 }
 
-// ─── Rarity system (Issue #283) ───────────────────────────────────────────────
+#[contracttype]
+#[derive(Clone)]
+pub struct SkinCatalogueEntry {
+    pub template: SkinTemplate,
+    pub preview: SkinPreview,
+    pub mint_count: u32,
+}
+
+pub fn get_full_catalogue(env: &Env) -> Vec<SkinCatalogueEntry> {
+    let templates = get_skin_templates(env);
+    let mut catalogue = Vec::new(env);
+    for t in templates.iter() {
+        let preview = build_preview(env, t.name.clone(), t.rarity.clone(), t.color_primary, t.color_secondary);
+        catalogue.push_back(SkinCatalogueEntry {
+            template: t,
+            preview,
+            mint_count: 0,
+        });
+    }
+    catalogue
+}
+
+pub fn search_templates(env: &Env, query: Symbol) -> Vec<SkinTemplate> {
+    let all = get_skin_templates(env);
+    let mut result = Vec::new(env);
+    for t in all.iter() {
+        if t.name == query {
+            result.push_back(t);
+        }
+    }
+    result
+}
+
+pub fn get_templates_by_price_range(env: &Env, min_price: i128, max_price: i128) -> Vec<SkinTemplate> {
+    let all = get_skin_templates(env);
+    let mut result = Vec::new(env);
+    for t in all.iter() {
+        if t.price >= min_price && t.price <= max_price {
+            result.push_back(t);
+        }
+    }
+    result
+}
+
+// ─── Rarity system (Issue #283 / #291) ────────────────────────────────────────
 
 /// Lowest price the cosmetic marketplace accepts for `rarity`.
 ///

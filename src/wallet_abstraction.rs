@@ -46,7 +46,7 @@ use soroban_sdk::BytesN;
 // ─── Data Types ───────────────────────────────────────────────────────────
 
 /// Player's smart wallet configuration.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 #[contracttype]
 pub struct WalletConfig {
     pub owner: Address,
