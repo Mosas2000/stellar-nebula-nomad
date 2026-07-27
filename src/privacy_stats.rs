@@ -345,3 +345,164 @@ pub fn batch_commit_stats(
     
     Ok(commitments)
 }
+
+// ─── Balance Hiding (#277) ────────────────────────────────────────────────
+
+/// Storage keys for balance hiding and selective disclosure.
+#[derive(Clone)]
+#[contracttype]
+pub enum BalancePrivacyKey {
+    /// Hidden balance commitment for a player: (player, token) → commitment.
+    HiddenBalance(Address, Symbol),
+    /// Selective disclosure grant: (owner, viewer, stat_type) → bool.
+    DisclosureGrant(Address, Address, Symbol),
+    /// Privacy level for a player (0=none, 1=balance-only, 2=full).
+    PrivacyLevel(Address),
+}
+
+/// Commit a hidden balance. The raw balance is never stored on-chain —
+/// only the commitment hash. The player can later reveal the balance
+/// off-chain and prove it matches the commitment.
+pub fn hide_balance(
+    env: &Env,
+    player: Address,
+    token: Symbol,
+    balance: i128,
+) -> Result<BytesN<32>, PrivacyError> {
+    player.require_auth();
+
+    if !is_opted_in(env, &player) {
+        return Err(PrivacyError::NotOptedIn);
+    }
+
+    let timestamp = env.ledger().timestamp();
+    let commitment = compute_commitment_hash(env, &token, balance, &player, timestamp);
+
+    env.storage().persistent().set(
+        &BalancePrivacyKey::HiddenBalance(player.clone(), token.clone()),
+        &commitment,
+    );
+
+    env.events().publish(
+        (symbol_short!("privacy"), symbol_short!("bal_hide")),
+        (player, token, commitment.clone()),
+    );
+
+    Ok(commitment)
+}
+
+/// Get the hidden balance commitment for a player.
+pub fn get_hidden_balance(
+    env: &Env,
+    player: &Address,
+    token: &Symbol,
+) -> Option<BytesN<32>> {
+    env.storage()
+        .persistent()
+        .get(&BalancePrivacyKey::HiddenBalance(player.clone(), token.clone()))
+}
+
+// ─── Selective Disclosure (#277) ──────────────────────────────────────────
+
+/// Grant a viewer permission to see a specific stat type.
+pub fn grant_disclosure(
+    env: &Env,
+    owner: Address,
+    viewer: Address,
+    stat_type: Symbol,
+) -> Result<(), PrivacyError> {
+    owner.require_auth();
+
+    if !is_opted_in(env, &owner) {
+        return Err(PrivacyError::NotOptedIn);
+    }
+
+    env.storage().persistent().set(
+        &BalancePrivacyKey::DisclosureGrant(owner.clone(), viewer.clone(), stat_type.clone()),
+        &true,
+    );
+
+    env.events().publish(
+        (symbol_short!("privacy"), symbol_short!("disc_grnt")),
+        (owner, viewer, stat_type),
+    );
+
+    Ok(())
+}
+
+/// Revoke a viewer's permission to see a specific stat type.
+pub fn revoke_disclosure(
+    env: &Env,
+    owner: Address,
+    viewer: Address,
+    stat_type: Symbol,
+) -> Result<(), PrivacyError> {
+    owner.require_auth();
+
+    env.storage().persistent().remove(
+        &BalancePrivacyKey::DisclosureGrant(owner, viewer, stat_type),
+    );
+
+    Ok(())
+}
+
+/// Check if a viewer has been granted access to a specific stat type.
+pub fn has_disclosure(
+    env: &Env,
+    owner: &Address,
+    viewer: &Address,
+    stat_type: &Symbol,
+) -> bool {
+    env.storage()
+        .persistent()
+        .get::<_, bool>(&BalancePrivacyKey::DisclosureGrant(
+            owner.clone(),
+            viewer.clone(),
+            stat_type.clone(),
+        ))
+        .unwrap_or(false)
+}
+
+/// Set the privacy level for a player.
+/// - 0: No privacy (all stats visible)
+/// - 1: Balance-only hidden
+/// - 2: Full privacy (all stats require selective disclosure)
+pub fn set_privacy_level(
+    env: &Env,
+    player: Address,
+    level: u32,
+) -> Result<(), PrivacyError> {
+    player.require_auth();
+
+    if level > 2 {
+        return Err(PrivacyError::InvalidProof);
+    }
+
+    env.storage()
+        .persistent()
+        .set(&BalancePrivacyKey::PrivacyLevel(player), &level);
+
+    Ok(())
+}
+
+/// Get the privacy level for a player.
+pub fn get_privacy_level(env: &Env, player: &Address) -> u32 {
+    env.storage()
+        .persistent()
+        .get(&BalancePrivacyKey::PrivacyLevel(player.clone()))
+        .unwrap_or(0)
+}
+
+/// Verify a commitment without revealing the value. This is a read-only
+/// proof verification that any party can perform.
+pub fn verify_balance_commitment(
+    env: &Env,
+    player: &Address,
+    token: &Symbol,
+    proof: &BytesN<64>,
+) -> Result<bool, PrivacyError> {
+    let commitment = get_hidden_balance(env, player, token)
+        .ok_or(PrivacyError::CommitmentNotFound)?;
+
+    Ok(verify_proof_internal(env, &commitment, proof))
+}

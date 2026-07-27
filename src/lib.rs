@@ -80,6 +80,8 @@ mod alliance_manager;
 mod market_oracle;
 mod audio_seed_generator;
 mod privacy_stats;
+mod wallet_abstraction;
+mod bot_detection;
 mod navigation_planner;
 mod event_scheduler;
 mod guild_quests;
