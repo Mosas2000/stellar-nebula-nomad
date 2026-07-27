@@ -3381,7 +3381,11 @@ impl NebulaNomadContract {
         gas_sponsor::check_sponsorship_eligibility(&env, &player)
     }
 
-    pub fn claim_sponsorship_fund(env: Env, admin: Address, amount: i128) -> Result<i128, SponsorError> {
+    pub fn claim_sponsorship_fund(
+        env: Env,
+        admin: Address,
+        amount: i128,
+    ) -> Result<i128, SponsorError> {
         gas_sponsor::claim_sponsorship_fund(&env, &admin, amount)
     }
 
@@ -3471,7 +3475,10 @@ impl NebulaNomadContract {
         )
     }
 
-    pub fn get_tournament(env: Env, tournament_id: u64) -> Result<tournament::Tournament, tournament::TournamentError> {
+    pub fn get_tournament(
+        env: Env,
+        tournament_id: u64,
+    ) -> Result<tournament::Tournament, tournament::TournamentError> {
         tournament::get_tournament(&env, tournament_id)
     }
 
@@ -3479,11 +3486,19 @@ impl NebulaNomadContract {
         tournament::get_registrants(&env, tournament_id)
     }
 
-    pub fn register_for_tournament(env: Env, player: Address, tournament_id: u64) -> Result<u32, tournament::TournamentError> {
+    pub fn register_for_tournament(
+        env: Env,
+        player: Address,
+        tournament_id: u64,
+    ) -> Result<u32, tournament::TournamentError> {
         tournament::register_for_tournament(&env, &player, tournament_id)
     }
 
-    pub fn start_tournament(env: Env, caller: Address, tournament_id: u64) -> Result<(), tournament::TournamentError> {
+    pub fn start_tournament(
+        env: Env,
+        caller: Address,
+        tournament_id: u64,
+    ) -> Result<(), tournament::TournamentError> {
         tournament::start_tournament(&env, &caller, tournament_id)
     }
 
@@ -3523,7 +3538,10 @@ impl NebulaNomadContract {
         loot_system::create_box_type(&env, &admin, name, cost_loot_tokens, entries)
     }
 
-    pub fn get_loot_box_type(env: Env, box_type_id: u64) -> Result<loot_system::LootBoxType, loot_system::LootError> {
+    pub fn get_loot_box_type(
+        env: Env,
+        box_type_id: u64,
+    ) -> Result<loot_system::LootBoxType, loot_system::LootError> {
         loot_system::get_box_type(&env, box_type_id)
     }
 
@@ -3534,7 +3552,12 @@ impl NebulaNomadContract {
     /// Admin-gated: the *only* way `LootToken` balance ever increases (via
     /// achievement/tournament completion etc. in game logic) — there is no
     /// purchase path, by design (Issue #287's "no real money" requirement).
-    pub fn grant_loot_tokens(env: Env, admin: Address, player: Address, amount: u64) -> Result<u64, loot_system::LootError> {
+    pub fn grant_loot_tokens(
+        env: Env,
+        admin: Address,
+        player: Address,
+        amount: u64,
+    ) -> Result<u64, loot_system::LootError> {
         loot_system::grant_loot_tokens(&env, &admin, &player, amount)
     }
 
@@ -3556,7 +3579,10 @@ impl NebulaNomadContract {
         loot_system::reveal_loot_open(&env, &player, request_id, player_seed)
     }
 
-    pub fn get_loot_open_request(env: Env, request_id: u64) -> Result<loot_system::OpenRequest, loot_system::LootError> {
+    pub fn get_loot_open_request(
+        env: Env,
+        request_id: u64,
+    ) -> Result<loot_system::OpenRequest, loot_system::LootError> {
         loot_system::get_open_request(&env, request_id)
     }
 }

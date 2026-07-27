@@ -158,8 +158,7 @@ pub fn create_tournament(
     organizer.require_auth();
 
     if !is_power_of_two(max_players)
-        || max_players < MIN_TOURNAMENT_PLAYERS
-        || max_players > MAX_TOURNAMENT_PLAYERS
+        || !(MIN_TOURNAMENT_PLAYERS..=MAX_TOURNAMENT_PLAYERS).contains(&max_players)
     {
         return Err(TournamentError::InvalidPlayerCount);
     }
@@ -268,8 +267,13 @@ pub fn register_for_tournament(
     }
 
     if tournament.entry_fee > 0 {
-        resource_minter::debit_balance(env, player, &tournament.resource_type, tournament.entry_fee)
-            .map_err(|_| TournamentError::RegistrationClosed)?;
+        resource_minter::debit_balance(
+            env,
+            player,
+            &tournament.resource_type,
+            tournament.entry_fee,
+        )
+        .map_err(|_| TournamentError::RegistrationClosed)?;
         tournament.prize_pool = tournament.prize_pool.saturating_add(tournament.entry_fee);
     }
 
@@ -452,8 +456,8 @@ pub fn report_match_result(
     }
     let combat_id = m.combat_id.ok_or(TournamentError::InvalidMatch)?;
 
-    let combat = pvp_combat::get_combat(env, combat_id)
-        .map_err(|_| TournamentError::InvalidMatch)?;
+    let combat =
+        pvp_combat::get_combat(env, combat_id).map_err(|_| TournamentError::InvalidMatch)?;
     let winner = combat.winner.ok_or(TournamentError::MatchNotReady)?;
 
     m.winner = Some(winner.clone());
@@ -662,16 +666,8 @@ mod test {
         bps.push_back(6000u32);
         bps.push_back(5000u32); // sums to 11000 > 10000
 
-        let err = create_tournament(
-            &env,
-            &organizer,
-            ResourceType::StellarDust,
-            0,
-            4,
-            3600,
-            bps,
-        )
-        .unwrap_err();
+        let err = create_tournament(&env, &organizer, ResourceType::StellarDust, 0, 4, 3600, bps)
+            .unwrap_err();
         assert_eq!(err, TournamentError::InvalidPrizeDistribution);
     }
 

@@ -94,8 +94,8 @@ impl Default for SponsorConfig {
             min_threshold: 10_000_000, // 1 XLM in stroops
             sponsor_amount: 100_000,   // 0.01 XLM per scan
             daily_cap: MAX_DAILY_SPONSORSHIPS,
-            per_user_cap: 1_000_000,   // 0.1 XLM lifetime per user
-            per_user_daily_cap: 3,     // 3 sponsorships per user per day
+            per_user_cap: 1_000_000, // 0.1 XLM lifetime per user
+            per_user_daily_cap: 3,   // 3 sponsorships per user per day
         }
     }
 }
@@ -124,7 +124,9 @@ pub fn initialize(env: &Env, admin: &Address, initial_fund: i128) -> Result<(), 
     }
 
     env.storage().instance().set(&DataKey::Admin, admin);
-    env.storage().instance().set(&DataKey::FundBalance, &initial_fund);
+    env.storage()
+        .instance()
+        .set(&DataKey::FundBalance, &initial_fund);
     env.storage().instance().set(&DataKey::DailyCounter, &0u32);
     env.storage()
         .instance()
@@ -279,7 +281,9 @@ pub fn sponsor_first_scan(env: &Env, player: &Address) -> Result<i128, SponsorEr
 
     // Deduct from fund and mark player as sponsored
     let new_balance = fund_balance - config.sponsor_amount;
-    env.storage().instance().set(&DataKey::FundBalance, &new_balance);
+    env.storage()
+        .instance()
+        .set(&DataKey::FundBalance, &new_balance);
     env.storage()
         .instance()
         .set(&DataKey::SponsoredStatus(player.clone()), &true);
@@ -323,10 +327,14 @@ pub fn sponsor_first_scan(env: &Env, player: &Address) -> Result<i128, SponsorEr
 }
 
 /// Admin-only function to replenish the sponsorship fund.
-/// 
+///
 /// # Authorization
 /// Only the configured admin can call this function.
-pub fn claim_sponsorship_fund(env: &Env, admin: &Address, amount: i128) -> Result<i128, SponsorError> {
+pub fn claim_sponsorship_fund(
+    env: &Env,
+    admin: &Address,
+    amount: i128,
+) -> Result<i128, SponsorError> {
     admin.require_auth();
 
     // Verify admin
@@ -351,7 +359,9 @@ pub fn claim_sponsorship_fund(env: &Env, admin: &Address, amount: i128) -> Resul
         .get(&DataKey::FundBalance)
         .unwrap_or(0);
     let new_balance = current_balance + amount;
-    env.storage().instance().set(&DataKey::FundBalance, &new_balance);
+    env.storage()
+        .instance()
+        .set(&DataKey::FundBalance, &new_balance);
 
     env.events().publish(
         (symbol_short!("sponsor"), symbol_short!("funded")),
@@ -396,7 +406,7 @@ pub fn get_remaining_daily_slots(env: &Env) -> u32 {
         .storage()
         .instance()
         .get(&DataKey::Config)
-        .unwrap_or_else(SponsorConfig::default);
+        .unwrap_or_default();
     config.daily_cap.saturating_sub(count)
 }
 
@@ -452,11 +462,11 @@ fn is_profile_verified(env: &Env, player: &Address) -> bool {
     // Profile IDs are sequential, so we check common range
     // In a real implementation, we'd have a direct lookup mapping
     // For now, we assume verification passes if player has interacted with profile system
-    
+
     // Check if player has been marked as having a profile via a direct storage lookup
     // This is a simplified check - the actual player_profile module would need
     // to expose a has_profile function
-    
+
     // For integration purposes, we'll check a special flag that could be set
     // when a profile is initialized
     let profile_key = (Symbol::new(env, "ProfileExists"), player.clone());
@@ -497,9 +507,10 @@ fn reset_user_daily_counter_if_needed(env: &Env, player: &Address) {
         env.storage()
             .instance()
             .set(&DataKey::UserDailyCount(player.clone()), &0u32);
-        env.storage()
-            .instance()
-            .set(&DataKey::UserLastResetTimestamp(player.clone()), &current_time);
+        env.storage().instance().set(
+            &DataKey::UserLastResetTimestamp(player.clone()),
+            &current_time,
+        );
     }
 }
 
@@ -534,9 +545,7 @@ fn push_pool_record(env: &Env, player: &Address, amount: i128) {
 /// Mark a player as having a verified profile (called by player_profile during init).
 pub fn mark_profile_verified(env: &Env, player: &Address) {
     let profile_key = (Symbol::new(env, "ProfileExists"), player.clone());
-    env.storage()
-        .instance()
-        .set(&profile_key, &true);
+    env.storage().instance().set(&profile_key, &true);
 }
 
 /// Update the sponsorship configuration (admin only).
@@ -577,7 +586,13 @@ pub fn update_config(
 
     env.events().publish(
         (symbol_short!("sponsor"), symbol_short!("config")),
-        (min_threshold, sponsor_amount, daily_cap, per_user_cap, per_user_daily_cap),
+        (
+            min_threshold,
+            sponsor_amount,
+            daily_cap,
+            per_user_cap,
+            per_user_daily_cap,
+        ),
     );
 
     Ok(config)
@@ -634,7 +649,10 @@ mod tests {
         let env = Env::default();
         env.mock_all_auths();
         let admin = Address::generate(&env);
-        assert_eq!(initialize(&env, &admin, 0), Err(SponsorError::InvalidAmount));
+        assert_eq!(
+            initialize(&env, &admin, 0),
+            Err(SponsorError::InvalidAmount)
+        );
     }
 
     // ── Eligibility view function ──────────────────────────────────────
@@ -796,7 +814,16 @@ mod tests {
         let (env, admin) = setup();
         // Lift caps so we can sponsor more than MAX_POOL_LOG_SIZE distinct
         // players within a single day.
-        update_config(&env, &admin, 10_000_000, 1_000, MAX_POOL_LOG_SIZE + 10, 0, 0).unwrap();
+        update_config(
+            &env,
+            &admin,
+            10_000_000,
+            1_000,
+            MAX_POOL_LOG_SIZE + 10,
+            0,
+            0,
+        )
+        .unwrap();
 
         let total = MAX_POOL_LOG_SIZE + 5;
         let mut first_player: Option<Address> = None;
@@ -816,11 +843,16 @@ mod tests {
         assert_eq!(pool.len(), MAX_POOL_LOG_SIZE);
 
         // Oldest entries (beyond the cap) must have been evicted.
-        let contains_first = (0..pool.len()).any(|i| pool.get(i).unwrap().player == first_player.clone().unwrap());
-        assert!(!contains_first, "oldest pool entry should have been trimmed");
+        let contains_first =
+            (0..pool.len()).any(|i| pool.get(i).unwrap().player == first_player.clone().unwrap());
+        assert!(
+            !contains_first,
+            "oldest pool entry should have been trimmed"
+        );
 
         // The most recent grant must still be present.
-        let contains_last = (0..pool.len()).any(|i| pool.get(i).unwrap().player == last_player.clone().unwrap());
+        let contains_last =
+            (0..pool.len()).any(|i| pool.get(i).unwrap().player == last_player.clone().unwrap());
         assert!(contains_last, "newest pool entry should be retained");
     }
 

@@ -163,7 +163,9 @@ pub fn create_box_type(
     let mut sum: u32 = 0;
     for i in 0..entries.len() {
         let e = entries.get(i).unwrap();
-        sum = sum.checked_add(e.weight_bps).ok_or(LootError::InvalidOddsTable)?;
+        sum = sum
+            .checked_add(e.weight_bps)
+            .ok_or(LootError::InvalidOddsTable)?;
     }
     if sum != 10_000 {
         return Err(LootError::InvalidOddsTable);
@@ -381,7 +383,11 @@ pub fn get_open_request(env: &Env, request_id: u64) -> Result<OpenRequest, LootE
 /// cumulative weights. Deterministic and fully reproducible by anyone given
 /// the same hash — that's what makes the odds table "transparent" rather
 /// than just "trust us."
-fn pick_weighted_entry(_env: &Env, entries: &Vec<LootEntry>, outcome_hash: &BytesN<32>) -> LootEntry {
+fn pick_weighted_entry(
+    _env: &Env,
+    entries: &Vec<LootEntry>,
+    outcome_hash: &BytesN<32>,
+) -> LootEntry {
     let bytes: Bytes = outcome_hash.clone().into();
     let mut roll_source: u32 = 0;
     for i in 0..4u32 {
@@ -407,7 +413,7 @@ fn pick_weighted_entry(_env: &Env, entries: &Vec<LootEntry>, outcome_hash: &Byte
 mod test {
     use super::*;
     use soroban_sdk::testutils::Address as _;
-    use soroban_sdk::{String as SorobanString, Env};
+    use soroban_sdk::{Env, String as SorobanString};
 
     fn make_odds_table(env: &Env) -> Vec<LootEntry> {
         let mut entries = Vec::new(env);
@@ -474,9 +480,14 @@ mod test {
         let player = Address::generate(&env);
         set_loot_admin(&env, &admin).unwrap();
 
-        let box_type_id =
-            create_box_type(&env, &admin, SorobanString::from_str(&env, "Starter Box"), 100, make_odds_table(&env))
-                .unwrap();
+        let box_type_id = create_box_type(
+            &env,
+            &admin,
+            SorobanString::from_str(&env, "Starter Box"),
+            100,
+            make_odds_table(&env),
+        )
+        .unwrap();
 
         // No LootTokens granted yet — opening must fail, there is no way to
         // pay with anything else (no real-money path exists at all).
@@ -504,9 +515,14 @@ mod test {
         set_loot_admin(&env, &admin).unwrap();
         grant_loot_tokens(&env, &admin, &player, 100).unwrap();
 
-        let box_type_id =
-            create_box_type(&env, &admin, SorobanString::from_str(&env, "Box"), 100, make_odds_table(&env))
-                .unwrap();
+        let box_type_id = create_box_type(
+            &env,
+            &admin,
+            SorobanString::from_str(&env, "Box"),
+            100,
+            make_odds_table(&env),
+        )
+        .unwrap();
 
         let real_seed = BytesN::from_array(&env, &[1u8; 32]);
         let real_seed_bytes: Bytes = real_seed.clone().into();
@@ -530,9 +546,14 @@ mod test {
         set_loot_admin(&env, &admin).unwrap();
         grant_loot_tokens(&env, &admin, &player, 200).unwrap();
 
-        let box_type_id =
-            create_box_type(&env, &admin, SorobanString::from_str(&env, "Box"), 100, make_odds_table(&env))
-                .unwrap();
+        let box_type_id = create_box_type(
+            &env,
+            &admin,
+            SorobanString::from_str(&env, "Box"),
+            100,
+            make_odds_table(&env),
+        )
+        .unwrap();
 
         let seed = BytesN::from_array(&env, &[9u8; 32]);
         let seed_bytes: Bytes = seed.clone().into();
