@@ -48,6 +48,10 @@ pub struct MissionReward {
     pub mission_id: u64,
     pub player: Address,
     pub reward: i128,
+    /// Quest-chain nodes this mission completion advanced (Issue #282).
+    /// Missions are the atoms quests are built from, so claiming one also
+    /// pushes any active quest with a matching objective forward.
+    pub quests_advanced: u32,
 }
 
 pub fn generate_daily_mission(env: &Env, player: Address) -> Result<Mission, MissionError> {
@@ -185,15 +189,26 @@ pub fn complete_mission(
         .persistent()
         .set(&MissionKey::MissionData(mission_id), &mission);
 
+    // Issue #282: feed the completion into the quest system so guided content
+    // advances from ordinary play. Quests whose objective does not match — or
+    // which have already expired — are skipped, so this never fails the claim.
+    let quests_advanced = crate::quest_system::on_mission_completed(
+        env,
+        &player,
+        mission.mission_type.clone(),
+        mission.target_count,
+    );
+
     let reward = MissionReward {
         mission_id,
         player: player.clone(),
         reward: mission.reward,
+        quests_advanced,
     };
 
     env.events().publish(
         (symbol_short!("mission"), symbol_short!("complete")),
-        (mission_id, player, mission.reward),
+        (mission_id, player, mission.reward, quests_advanced),
     );
 
     Ok(reward)

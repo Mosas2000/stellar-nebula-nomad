@@ -99,6 +99,7 @@ mod crafting;
 // Retention, economy, content and cosmetic-marketplace systems
 // (Issues #280, #281, #282, #283).
 mod daily_rewards;
+mod quest_system;
 mod token_burning;
 pub mod recipes;
 pub mod notifications {
@@ -349,6 +350,12 @@ pub use daily_rewards::{
 // ─── Token Burning (Issue #281) ───────────────────────────────────────────
 pub use token_burning::{
     BurnReason, BurnRecord, BurnStats, BurningError, PlayerBurnStats, MAX_BURN_FEE_BPS,
+};
+
+// ─── Quest System (Issue #282) ────────────────────────────────────────────
+pub use quest_system::{
+    ChainProgress, QuestBranch, QuestChain, QuestError, QuestNode, QuestReward, QuestState,
+    QuestStatus, MAX_ACTIVE_QUESTS, MAX_BRANCHES_PER_NODE, MAX_CHAIN_LENGTH,
 };
 
 pub use economics::monitor::{
@@ -2931,6 +2938,124 @@ impl NebulaNomadContract {
     /// Cumulative amount ever minted of a resource, ignoring burns.
     pub fn get_total_minted(env: Env, resource_type: ResourceType) -> u64 {
         resource_minter::total_minted(&env, &resource_type)
+    }
+
+    // ─── Quest System (Issue #282) ────────────────────────────────────────
+
+    /// Create an empty quest chain owned by `creator`.
+    pub fn define_quest_chain(
+        env: Env,
+        creator: Address,
+        name: Symbol,
+    ) -> Result<u64, QuestError> {
+        quest_system::define_chain(&env, creator, name)
+    }
+
+    /// Append a node to a quest chain.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_quest_node(
+        env: Env,
+        creator: Address,
+        chain_id: u64,
+        objective: Symbol,
+        target_count: u32,
+        reward: QuestReward,
+        narrative_tier: Symbol,
+        title: String,
+        description: String,
+        branches: Vec<QuestBranch>,
+        duration_secs: u64,
+    ) -> Result<u64, QuestError> {
+        quest_system::add_quest_node(
+            &env,
+            creator,
+            chain_id,
+            objective,
+            target_count,
+            reward,
+            narrative_tier,
+            title,
+            description,
+            branches,
+            duration_secs,
+        )
+    }
+
+    /// Verify every branch in a chain points at an existing node.
+    pub fn validate_quest_chain(env: Env, chain_id: u64) -> Result<(), QuestError> {
+        quest_system::validate_chain(&env, chain_id)
+    }
+
+    /// Begin a quest chain, activating its root node.
+    pub fn start_quest_chain(
+        env: Env,
+        player: Address,
+        chain_id: u64,
+    ) -> Result<QuestState, QuestError> {
+        quest_system::start_chain(&env, player, chain_id)
+    }
+
+    /// Add progress to an active quest.
+    pub fn record_quest_progress(
+        env: Env,
+        player: Address,
+        quest_id: u64,
+        amount: u32,
+    ) -> Result<QuestState, QuestError> {
+        quest_system::record_progress(&env, player, quest_id, amount)
+    }
+
+    /// Claim the reward for a completed quest.
+    pub fn claim_quest_reward(
+        env: Env,
+        player: Address,
+        quest_id: u64,
+    ) -> Result<QuestReward, QuestError> {
+        quest_system::claim_quest_reward(&env, player, quest_id)
+    }
+
+    /// Take a branch out of a claimed quest, activating the successor node.
+    pub fn choose_quest_branch(
+        env: Env,
+        player: Address,
+        quest_id: u64,
+        choice_id: u32,
+    ) -> Result<Option<QuestState>, QuestError> {
+        quest_system::choose_branch(&env, player, quest_id, choice_id)
+    }
+
+    /// Fetch a quest node definition.
+    pub fn get_quest_node(env: Env, quest_id: u64) -> Option<QuestNode> {
+        quest_system::get_quest_node(&env, quest_id)
+    }
+
+    /// Fetch a quest chain definition.
+    pub fn get_quest_chain(env: Env, chain_id: u64) -> Option<QuestChain> {
+        quest_system::get_chain(&env, chain_id)
+    }
+
+    /// Fetch a player's state for one quest.
+    pub fn get_quest_state(env: Env, player: Address, quest_id: u64) -> Option<QuestState> {
+        quest_system::get_quest_state(&env, &player, quest_id)
+    }
+
+    /// Fetch a player's progress through one chain, including the path walked.
+    pub fn get_quest_chain_progress(
+        env: Env,
+        player: Address,
+        chain_id: u64,
+    ) -> Option<ChainProgress> {
+        quest_system::get_chain_progress(&env, &player, chain_id)
+    }
+
+    /// State records for the player's currently active quests.
+    pub fn get_active_quests(env: Env, player: Address) -> Vec<QuestState> {
+        quest_system::get_active_quest_states(&env, &player)
+    }
+
+    /// IDs of the player's currently active quests.
+    pub fn get_active_quest_ids(env: Env, player: Address) -> Vec<u64> {
+        quest_system::get_active_quests(&env, &player)
     }
 
     // ─── Economic Monitoring & Balancing ──────────────────────────────────
