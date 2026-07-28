@@ -97,4 +97,3 @@ pub fn cancel_listing(env: &Env, owner: &Address, offer_id: u64) -> Result<DexOf
 
     Ok(offer)
 }
-
