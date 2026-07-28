@@ -18,6 +18,8 @@ pub enum OracleKey {
 pub enum OracleError {
     /// The provided seed failed validation.
     SeedInvalid = 1,
+    /// Fallback mechanism depleted.
+    FallbackDepleted = 2,
 }
 
 /// Generate a hybrid random seed by combining ledger sequence, timestamp,
@@ -105,21 +107,43 @@ pub fn request_random_seed(env: &Env) -> BytesN<32> {
 pub fn verify_and_fallback(env: &Env, seed: &BytesN<32>) -> Result<BytesN<32>, OracleError> {
     // Check if seed is all zeros (invalid)
     if is_zero_seed(seed) {
-        // Attempt fallback to previous hash
-        let fallback: Option<BytesN<32>> = env.storage().instance().get(&OracleKey::PreviousHash);
-
-        match fallback {
-            Some(prev) => {
-                env.events().publish(
-                    (symbol_short!("rng"), symbol_short!("fallbck")),
-                    prev.clone(),
-                );
-                Ok(prev)
-            }
-            None => Err(OracleError::SeedInvalid),
+        // Attempt multi-layer fallback
+        if let Some(fallback) = get_fallback_seed(env) {
+            env.events().publish(
+                (symbol_short!("rng"), symbol_short!("fallbck")),
+                fallback.clone(),
+            );
+            Ok(fallback)
+        } else {
+            Err(OracleError::SeedInvalid)
         }
     } else {
         Ok(seed.clone())
+    }
+}
+
+/// Get the best available fallback seed (tries previous hash, then entropy pool).
+pub fn get_fallback_seed(env: &Env) -> Option<BytesN<32>> {
+    // Try previous hash first
+    if let Some(prev) = env
+        .storage()
+        .instance()
+        .get::<OracleKey, BytesN<32>>(&OracleKey::PreviousHash)
+    {
+        return Some(prev);
+    }
+
+    // Fall back to first seed in entropy pool
+    let pool: Vec<BytesN<32>> = env
+        .storage()
+        .instance()
+        .get(&OracleKey::EntropyPool)
+        .unwrap_or_else(|| Vec::new(env));
+
+    if pool.len() > 0 {
+        pool.get(0)
+    } else {
+        None
     }
 }
 

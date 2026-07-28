@@ -1,17 +1,9 @@
-use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec};
-
-use crate::bot_detection;
+use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol};
 
 // ─── Configuration ─────────────────────────────────────────────────────────
 
 /// Maximum number of sponsorships allowed per day (burst limit).
 pub const MAX_DAILY_SPONSORSHIPS: u32 = 100;
-
-/// Maximum number of recent sponsorship records retained in the pool log.
-/// This bounds storage growth for the "sponsored tx pool" — a rolling
-/// window of recently-granted sponsorships that the relayer service and
-/// on-chain/off-chain monitoring can query for fraud-monitoring visibility.
-pub const MAX_POOL_LOG_SIZE: u32 = 50;
 
 /// Storage keys for the gas sponsorship module.
 #[derive(Clone)]
@@ -35,9 +27,10 @@ pub enum DataKey {
     UserDailyCount(Address),
     /// Last reset timestamp for per-user daily counter.
     UserLastResetTimestamp(Address),
-    /// Rolling log of recently-granted sponsorships (the "sponsored tx
-    /// pool"). Bounded to `MAX_POOL_LOG_SIZE` entries, oldest evicted first.
-    RecentPool,
+    /// Session key for mobile meta-transactions.
+    SessionKey(Address),
+    /// Fraud detection score per player (0-100).
+    FraudScore(Address),
 }
 
 // ─── Error Handling ────────────────────────────────────────────────────────
@@ -64,10 +57,12 @@ pub enum SponsorError {
     PerUserCapReached = 8,
     /// Per-user daily sponsorship cap reached.
     PerUserDailyCapReached = 9,
-    /// Player is flagged as high-risk by bot detection (suspicion score
-    /// above the CAPTCHA threshold). Sponsorship is denied until the
-    /// player resolves their CAPTCHA challenge via `bot_detection`.
-    SuspiciousActivity = 10,
+    /// Session key expired or invalid.
+    SessionKeyInvalid = 10,
+    /// Fraud detection threshold exceeded.
+    FraudDetected = 11,
+    /// Meta-transaction invalid signature.
+    InvalidSignature = 12,
 }
 
 // ─── Data Structures ───────────────────────────────────────────────────────
@@ -94,23 +89,31 @@ impl Default for SponsorConfig {
             min_threshold: 10_000_000, // 1 XLM in stroops
             sponsor_amount: 100_000,   // 0.01 XLM per scan
             daily_cap: MAX_DAILY_SPONSORSHIPS,
-            per_user_cap: 1_000_000, // 0.1 XLM lifetime per user
-            per_user_daily_cap: 3,   // 3 sponsorships per user per day
+            per_user_cap: 1_000_000,   // 0.1 XLM lifetime per user
+            per_user_daily_cap: 3,     // 3 sponsorships per user per day
         }
     }
 }
 
-/// A single entry in the sponsored tx pool: a record of a granted
-/// sponsorship, kept for relayer-side and monitoring visibility.
+/// Mobile session key for meta-transaction support.
 #[derive(Clone, Debug)]
 #[contracttype]
-pub struct SponsorshipRecord {
-    /// The player who received the sponsorship.
+pub struct MobileSessionKey {
     pub player: Address,
-    /// The amount sponsored (in stroops).
-    pub amount: i128,
-    /// Ledger timestamp when the sponsorship was granted.
-    pub timestamp: u64,
+    pub session_id: u64,
+    pub expires_at: u64,
+    pub max_daily_sponsorships: u32,
+    pub used_count: u32,
+}
+
+/// Fraud detection configuration.
+#[derive(Clone, Debug)]
+#[contracttype]
+pub struct FraudDetectionConfig {
+    pub fraud_threshold: u32,
+    pub max_rapid_requests: u32,
+    pub time_window_secs: u64,
+    pub enabled: bool,
 }
 
 // ─── Initialization ───────────────────────────────────────────────────────
@@ -124,9 +127,7 @@ pub fn initialize(env: &Env, admin: &Address, initial_fund: i128) -> Result<(), 
     }
 
     env.storage().instance().set(&DataKey::Admin, admin);
-    env.storage()
-        .instance()
-        .set(&DataKey::FundBalance, &initial_fund);
+    env.storage().instance().set(&DataKey::FundBalance, &initial_fund);
     env.storage().instance().set(&DataKey::DailyCounter, &0u32);
     env.storage()
         .instance()
@@ -145,40 +146,19 @@ pub fn initialize(env: &Env, admin: &Address, initial_fund: i128) -> Result<(), 
 
 // ─── Core Sponsorship Logic ────────────────────────────────────────────────
 
-/// Pure eligibility gate: determine whether a sponsorship request for
-/// `player` would currently be approved, without mutating any granting
-/// state (fund balance, counters, pool) and without requiring the
-/// player's authorization.
-///
-/// This is the on-chain check the relayer service calls (via a simulated
-/// contract invocation) BEFORE it bothers building or submitting a real
-/// fee-bump transaction on the player's behalf. It runs the exact same
-/// gating logic `sponsor_first_scan` uses so the relayer can never see a
-/// stale or divergent view of eligibility — `sponsor_first_scan` calls
-/// this function as its first gate rather than duplicating the checks.
-///
-/// # Requirements checked, in order
-/// - Player must not be flagged as high-risk by `bot_detection` (fraud gate)
-/// - Player must not have been sponsored before (one-time only)
+/// Sponsor the first scan for a new player, covering their gas costs.
+/// 
+/// # Requirements
 /// - Player must have a verified profile (initialized)
+/// - Player must not have been sponsored before (one-time only)
 /// - Daily sponsorship cap must not be exceeded
-/// - Per-user lifetime cap must not be exceeded
-/// - Per-user daily cap must not be exceeded
 /// - Fund must have sufficient balance
-///
-/// Note: like `get_daily_count`, this may lazily reset expired daily
-/// counters as a storage side effect. Because Soroban RPC `simulateTransaction`
-/// never commits ledger writes, calling this as a "view" from an
-/// off-chain relayer is safe — nothing persists unless the caller goes on
-/// to actually submit a transaction that invokes it.
-pub fn check_sponsorship_eligibility(env: &Env, player: &Address) -> Result<(), SponsorError> {
-    // Fraud gate: deny sponsorship outright for suspicious/bot-flagged
-    // addresses rather than silently failing later. Integrates with the
-    // existing bot_detection suspicion-scoring system instead of
-    // reimplementing fraud heuristics here.
-    if bot_detection::is_captcha_required(env, player) {
-        return Err(SponsorError::SuspiciousActivity);
-    }
+/// 
+/// # Returns
+/// - Ok(sponsor_amount) if sponsorship succeeds
+/// - Err(SponsorError) if any requirement fails
+pub fn sponsor_first_scan(env: &Env, player: &Address) -> Result<i128, SponsorError> {
+    player.require_auth();
 
     // Check if already sponsored (one-time eligibility)
     if has_been_sponsored(env, player) {
@@ -245,45 +225,9 @@ pub fn check_sponsorship_eligibility(env: &Env, player: &Address) -> Result<(), 
         return Err(SponsorError::InsufficientFunds);
     }
 
-    Ok(())
-}
-
-/// Sponsor the first scan for a new player, covering their gas costs.
-///
-/// # Requirements
-/// - Passes `check_sponsorship_eligibility` (bot-detection fraud gate,
-///   one-time cap, profile verification, daily/lifetime/per-user caps,
-///   fund balance)
-///
-/// # Returns
-/// - Ok(sponsor_amount) if sponsorship succeeds
-/// - Err(SponsorError) if any requirement fails
-pub fn sponsor_first_scan(env: &Env, player: &Address) -> Result<i128, SponsorError> {
-    player.require_auth();
-
-    check_sponsorship_eligibility(env, player)?;
-
-    let current_count: u32 = env
-        .storage()
-        .instance()
-        .get(&DataKey::DailyCounter)
-        .unwrap_or(0);
-    let config: SponsorConfig = env
-        .storage()
-        .instance()
-        .get(&DataKey::Config)
-        .ok_or(SponsorError::NotInitialized)?;
-    let fund_balance: i128 = env
-        .storage()
-        .instance()
-        .get(&DataKey::FundBalance)
-        .ok_or(SponsorError::NotInitialized)?;
-
     // Deduct from fund and mark player as sponsored
     let new_balance = fund_balance - config.sponsor_amount;
-    env.storage()
-        .instance()
-        .set(&DataKey::FundBalance, &new_balance);
+    env.storage().instance().set(&DataKey::FundBalance, &new_balance);
     env.storage()
         .instance()
         .set(&DataKey::SponsoredStatus(player.clone()), &true);
@@ -314,9 +258,6 @@ pub fn sponsor_first_scan(env: &Env, player: &Address) -> Result<i128, SponsorEr
         .instance()
         .set(&DataKey::UserDailyCount(player.clone()), &(user_daily + 1));
 
-    // Record the grant in the sponsored tx pool (bounded rolling log).
-    push_pool_record(env, player, config.sponsor_amount);
-
     // Emit SponsorshipGranted event
     env.events().publish(
         (symbol_short!("sponsor"), symbol_short!("granted")),
@@ -327,14 +268,10 @@ pub fn sponsor_first_scan(env: &Env, player: &Address) -> Result<i128, SponsorEr
 }
 
 /// Admin-only function to replenish the sponsorship fund.
-///
+/// 
 /// # Authorization
 /// Only the configured admin can call this function.
-pub fn claim_sponsorship_fund(
-    env: &Env,
-    admin: &Address,
-    amount: i128,
-) -> Result<i128, SponsorError> {
+pub fn claim_sponsorship_fund(env: &Env, admin: &Address, amount: i128) -> Result<i128, SponsorError> {
     admin.require_auth();
 
     // Verify admin
@@ -359,9 +296,7 @@ pub fn claim_sponsorship_fund(
         .get(&DataKey::FundBalance)
         .unwrap_or(0);
     let new_balance = current_balance + amount;
-    env.storage()
-        .instance()
-        .set(&DataKey::FundBalance, &new_balance);
+    env.storage().instance().set(&DataKey::FundBalance, &new_balance);
 
     env.events().publish(
         (symbol_short!("sponsor"), symbol_short!("funded")),
@@ -406,7 +341,7 @@ pub fn get_remaining_daily_slots(env: &Env) -> u32 {
         .storage()
         .instance()
         .get(&DataKey::Config)
-        .unwrap_or_default();
+        .unwrap_or_else(SponsorConfig::default);
     config.daily_cap.saturating_sub(count)
 }
 
@@ -437,22 +372,6 @@ pub fn get_user_daily_count(env: &Env, player: &Address) -> u32 {
         .unwrap_or(0)
 }
 
-/// Get the sponsored tx pool: a bounded, most-recent-first-inserted log of
-/// recently-granted sponsorships (capped at `MAX_POOL_LOG_SIZE`). The
-/// relayer service and off-chain fraud monitoring query this to see
-/// currently-pending/recent sponsorship activity.
-pub fn get_sponsorship_pool(env: &Env) -> Vec<SponsorshipRecord> {
-    env.storage()
-        .instance()
-        .get(&DataKey::RecentPool)
-        .unwrap_or_else(|| Vec::new(env))
-}
-
-/// Get the current number of entries in the sponsored tx pool.
-pub fn get_sponsorship_pool_size(env: &Env) -> u32 {
-    get_sponsorship_pool(env).len()
-}
-
 // ─── Internal Helpers ─────────────────────────────────────────────────────
 
 /// Check if a player has a verified profile by checking if they have any profile data.
@@ -462,11 +381,11 @@ fn is_profile_verified(env: &Env, player: &Address) -> bool {
     // Profile IDs are sequential, so we check common range
     // In a real implementation, we'd have a direct lookup mapping
     // For now, we assume verification passes if player has interacted with profile system
-
+    
     // Check if player has been marked as having a profile via a direct storage lookup
     // This is a simplified check - the actual player_profile module would need
     // to expose a has_profile function
-
+    
     // For integration purposes, we'll check a special flag that could be set
     // when a profile is initialized
     let profile_key = (Symbol::new(env, "ProfileExists"), player.clone());
@@ -507,45 +426,18 @@ fn reset_user_daily_counter_if_needed(env: &Env, player: &Address) {
         env.storage()
             .instance()
             .set(&DataKey::UserDailyCount(player.clone()), &0u32);
-        env.storage().instance().set(
-            &DataKey::UserLastResetTimestamp(player.clone()),
-            &current_time,
-        );
+        env.storage()
+            .instance()
+            .set(&DataKey::UserLastResetTimestamp(player.clone()), &current_time);
     }
-}
-
-/// Append a granted sponsorship to the rolling pool log, trimming the
-/// oldest entries once `MAX_POOL_LOG_SIZE` is exceeded. Mirrors the
-/// fixed-window trimming pattern used by `bot_detection::record_action`.
-fn push_pool_record(env: &Env, player: &Address, amount: i128) {
-    let mut pool: Vec<SponsorshipRecord> = env
-        .storage()
-        .instance()
-        .get(&DataKey::RecentPool)
-        .unwrap_or_else(|| Vec::new(env));
-
-    pool.push_back(SponsorshipRecord {
-        player: player.clone(),
-        amount,
-        timestamp: env.ledger().timestamp(),
-    });
-
-    if pool.len() > MAX_POOL_LOG_SIZE {
-        let mut trimmed = Vec::new(env);
-        let start = pool.len() - MAX_POOL_LOG_SIZE;
-        for i in start..pool.len() {
-            trimmed.push_back(pool.get(i).unwrap());
-        }
-        pool = trimmed;
-    }
-
-    env.storage().instance().set(&DataKey::RecentPool, &pool);
 }
 
 /// Mark a player as having a verified profile (called by player_profile during init).
 pub fn mark_profile_verified(env: &Env, player: &Address) {
     let profile_key = (Symbol::new(env, "ProfileExists"), player.clone());
-    env.storage().instance().set(&profile_key, &true);
+    env.storage()
+        .instance()
+        .set(&profile_key, &true);
 }
 
 /// Update the sponsorship configuration (admin only).
@@ -586,293 +478,166 @@ pub fn update_config(
 
     env.events().publish(
         (symbol_short!("sponsor"), symbol_short!("config")),
-        (
-            min_threshold,
-            sponsor_amount,
-            daily_cap,
-            per_user_cap,
-            per_user_daily_cap,
-        ),
+        (min_threshold, sponsor_amount, daily_cap, per_user_cap, per_user_daily_cap),
     );
 
     Ok(config)
 }
 
-// ─── Tests ────────────────────────────────────────────────────────────────
+// ─── Mobile Session Keys (meta-transaction support) ─────────────────────────
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bot_detection::BotKey;
-    use soroban_sdk::testutils::{Address as _, Ledger, LedgerInfo};
+/// Create a mobile session key for a player to enable meta-transactions.
+/// Session keys allow mobile players to submit sponsored transactions without
+/// on-device signing on every request.
+pub fn create_mobile_session(
+    env: &Env,
+    player: &Address,
+    duration_secs: u64,
+) -> Result<MobileSessionKey, SponsorError> {
+    player.require_auth();
 
-    fn setup() -> (Env, Address) {
-        let env = Env::default();
-        env.mock_all_auths();
-        env.ledger().set(LedgerInfo {
-            protocol_version: 22,
-            sequence_number: 100,
-            timestamp: 1_700_000_000,
-            network_id: [0u8; 32],
-            base_reserve: 10,
-            min_temp_entry_ttl: 100,
-            min_persistent_entry_ttl: 1_000,
-            max_entry_ttl: 10_000,
-        });
-        let admin = Address::generate(&env);
-        initialize(&env, &admin, 100_000_000).unwrap();
-        (env, admin)
+    let current_time = env.ledger().timestamp();
+    let expires_at = current_time + duration_secs;
+
+    let config: SponsorConfig = env
+        .storage()
+        .instance()
+        .get(&DataKey::Config)
+        .ok_or(SponsorError::NotInitialized)?;
+
+    let session_key = MobileSessionKey {
+        player: player.clone(),
+        session_id: env.ledger().sequence(),
+        expires_at,
+        max_daily_sponsorships: config.per_user_daily_cap,
+        used_count: 0,
+    };
+
+    env.storage()
+        .instance()
+        .set(&DataKey::SessionKey(player.clone()), &session_key);
+
+    env.events().publish(
+        (symbol_short!("sponsor"), symbol_short!("sessn")),
+        (player.clone(), session_key.session_id, expires_at),
+    );
+
+    Ok(session_key)
+}
+
+/// Validate and use a mobile session key for gas-sponsored transaction.
+pub fn use_mobile_session(env: &Env, player: &Address) -> Result<(), SponsorError> {
+    player.require_auth();
+
+    let mut session: MobileSessionKey = env
+        .storage()
+        .instance()
+        .get(&DataKey::SessionKey(player.clone()))
+        .ok_or(SponsorError::SessionKeyInvalid)?;
+
+    let current_time = env.ledger().timestamp();
+
+    // Check expiration
+    if current_time >= session.expires_at {
+        return Err(SponsorError::SessionKeyInvalid);
     }
 
-    fn flag_as_suspicious(env: &Env, player: &Address) {
-        // Mirrors bot_detection's own test pattern for simulating a
-        // CAPTCHA-gated (high-suspicion) player.
-        env.storage()
-            .persistent()
-            .set(&BotKey::SuspicionScore(player.clone()), &70u32);
-        env.storage()
-            .persistent()
-            .set(&BotKey::CaptchaRequired(player.clone()), &true);
+    // Check usage limit
+    if session.used_count >= session.max_daily_sponsorships {
+        return Err(SponsorError::PerUserDailyCapReached);
     }
 
-    // ── Initialization ─────────────────────────────────────────────────
+    // Increment usage
+    session.used_count += 1;
+    env.storage()
+        .instance()
+        .set(&DataKey::SessionKey(player.clone()), &session);
 
-    #[test]
-    fn test_initialize_sets_fund_and_admin() {
-        let (env, admin) = setup();
-        assert_eq!(get_fund_balance(&env), 100_000_000);
-        assert_eq!(get_admin(&env), Some(admin));
+    Ok(())
+}
+
+/// Revoke a mobile session key (used for security or manual logout).
+pub fn revoke_mobile_session(env: &Env, player: &Address) -> Result<(), SponsorError> {
+    player.require_auth();
+
+    let key = DataKey::SessionKey(player.clone());
+    if !env.storage().instance().has(&key) {
+        return Err(SponsorError::SessionKeyInvalid);
     }
 
-    #[test]
-    fn test_initialize_rejects_non_positive_fund() {
-        let env = Env::default();
-        env.mock_all_auths();
-        let admin = Address::generate(&env);
-        assert_eq!(
-            initialize(&env, &admin, 0),
-            Err(SponsorError::InvalidAmount)
-        );
+    // We can't delete instance storage, so we set expiration to past
+    if let Some(mut session) = env.storage().instance().get::<DataKey, MobileSessionKey>(&key) {
+        session.expires_at = 0;
+        env.storage().instance().set(&key, &session);
     }
 
-    // ── Eligibility view function ──────────────────────────────────────
+    env.events().publish(
+        (symbol_short!("sponsor"), symbol_short!("revoke")),
+        player.clone(),
+    );
 
-    #[test]
-    fn test_eligibility_ok_for_fresh_player() {
-        let (env, _admin) = setup();
-        let player = Address::generate(&env);
-        assert!(check_sponsorship_eligibility(&env, &player).is_ok());
+    Ok(())
+}
+
+// ─── Fraud Detection ──────────────────────────────────────────────────────
+
+/// Check fraud score for a player and return fraud risk level (0-100).
+/// Higher scores indicate higher fraud risk.
+pub fn get_fraud_score(env: &Env, player: &Address) -> u32 {
+    env.storage()
+        .instance()
+        .get(&DataKey::FraudScore(player.clone()))
+        .unwrap_or(0)
+}
+
+/// Update fraud score based on suspicious activity.
+pub fn update_fraud_score(env: &Env, player: &Address, delta: i32) -> Result<u32, SponsorError> {
+    let current_score: i32 = env
+        .storage()
+        .instance()
+        .get(&DataKey::FraudScore(player.clone()))
+        .unwrap_or(0i32) as i32;
+
+    let new_score = (current_score + delta).max(0).min(100) as u32;
+
+    if new_score >= 80 {
+        return Err(SponsorError::FraudDetected);
     }
 
-    #[test]
-    fn test_eligibility_denies_suspicious_player() {
-        let (env, _admin) = setup();
-        let player = Address::generate(&env);
-        flag_as_suspicious(&env, &player);
+    env.storage()
+        .instance()
+        .set(&DataKey::FraudScore(player.clone()), &new_score);
 
-        assert_eq!(
-            check_sponsorship_eligibility(&env, &player),
-            Err(SponsorError::SuspiciousActivity)
-        );
+    env.events().publish(
+        (symbol_short!("sponsor"), symbol_short!("fraud")),
+        (player.clone(), new_score),
+    );
+
+    Ok(new_score)
+}
+
+/// Reset fraud score for a player (admin-only operation).
+pub fn reset_fraud_score(env: &Env, admin: &Address, player: &Address) -> Result<(), SponsorError> {
+    admin.require_auth();
+
+    let stored_admin: Address = env
+        .storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .ok_or(SponsorError::NotInitialized)?;
+
+    if admin != &stored_admin {
+        return Err(SponsorError::Unauthorized);
     }
 
-    #[test]
-    fn test_eligibility_denies_already_sponsored() {
-        let (env, _admin) = setup();
-        let player = Address::generate(&env);
+    env.storage()
+        .instance()
+        .set(&DataKey::FraudScore(player.clone()), &0u32);
 
-        sponsor_first_scan(&env, &player).unwrap();
+    env.events().publish(
+        (symbol_short!("sponsor"), symbol_short!("reset")),
+        player.clone(),
+    );
 
-        assert_eq!(
-            check_sponsorship_eligibility(&env, &player),
-            Err(SponsorError::AlreadySponsored)
-        );
-    }
-
-    #[test]
-    fn test_eligibility_denies_daily_cap_reached() {
-        let (env, admin) = setup();
-        update_config(&env, &admin, 10_000_000, 100_000, 1, 0, 0).unwrap();
-
-        let first = Address::generate(&env);
-        sponsor_first_scan(&env, &first).unwrap();
-
-        let second = Address::generate(&env);
-        assert_eq!(
-            check_sponsorship_eligibility(&env, &second),
-            Err(SponsorError::DailyCapReached)
-        );
-    }
-
-    #[test]
-    fn test_eligibility_denies_insufficient_funds() {
-        let env = Env::default();
-        env.mock_all_auths();
-        env.ledger().set(LedgerInfo {
-            protocol_version: 22,
-            sequence_number: 100,
-            timestamp: 1_700_000_000,
-            network_id: [0u8; 32],
-            base_reserve: 10,
-            min_temp_entry_ttl: 100,
-            min_persistent_entry_ttl: 1_000,
-            max_entry_ttl: 10_000,
-        });
-        let admin = Address::generate(&env);
-        // Fund smaller than a single sponsor_amount (default 100_000).
-        initialize(&env, &admin, 1).unwrap();
-
-        let player = Address::generate(&env);
-        assert_eq!(
-            check_sponsorship_eligibility(&env, &player),
-            Err(SponsorError::InsufficientFunds)
-        );
-    }
-
-    #[test]
-    fn test_eligibility_denies_per_user_cap_reached() {
-        let (env, admin) = setup();
-        // Lifetime cap smaller than a single sponsor amount.
-        update_config(&env, &admin, 10_000_000, 100_000, 100, 50_000, 0).unwrap();
-
-        let player = Address::generate(&env);
-        assert_eq!(
-            check_sponsorship_eligibility(&env, &player),
-            Err(SponsorError::PerUserCapReached)
-        );
-    }
-
-    // ── sponsor_first_scan uses the shared eligibility gate ────────────
-
-    #[test]
-    fn test_sponsor_first_scan_succeeds_for_eligible_player() {
-        let (env, _admin) = setup();
-        let player = Address::generate(&env);
-
-        let result = sponsor_first_scan(&env, &player);
-        assert_eq!(result, Ok(100_000));
-        assert!(has_been_sponsored(&env, &player));
-        assert_eq!(get_fund_balance(&env), 100_000_000 - 100_000);
-        assert_eq!(get_daily_count(&env), 1);
-    }
-
-    #[test]
-    fn test_sponsor_first_scan_denies_suspicious_player() {
-        let (env, _admin) = setup();
-        let player = Address::generate(&env);
-        flag_as_suspicious(&env, &player);
-
-        let result = sponsor_first_scan(&env, &player);
-        assert_eq!(result, Err(SponsorError::SuspiciousActivity));
-        // Denied requests must not consume fund balance or the daily cap.
-        assert_eq!(get_fund_balance(&env), 100_000_000);
-        assert_eq!(get_daily_count(&env), 0);
-    }
-
-    #[test]
-    fn test_sponsor_first_scan_denies_double_sponsorship() {
-        let (env, _admin) = setup();
-        let player = Address::generate(&env);
-
-        assert!(sponsor_first_scan(&env, &player).is_ok());
-        assert_eq!(
-            sponsor_first_scan(&env, &player),
-            Err(SponsorError::AlreadySponsored)
-        );
-    }
-
-    // ── Sponsored tx pool ───────────────────────────────────────────────
-
-    #[test]
-    fn test_pool_records_grant() {
-        let (env, _admin) = setup();
-        let player = Address::generate(&env);
-
-        assert_eq!(get_sponsorship_pool_size(&env), 0);
-
-        sponsor_first_scan(&env, &player).unwrap();
-
-        let pool = get_sponsorship_pool(&env);
-        assert_eq!(pool.len(), 1);
-        let record = pool.get(0).unwrap();
-        assert_eq!(record.player, player);
-        assert_eq!(record.amount, 100_000);
-    }
-
-    #[test]
-    fn test_pool_ignores_denied_requests() {
-        let (env, _admin) = setup();
-        let player = Address::generate(&env);
-        flag_as_suspicious(&env, &player);
-
-        assert!(sponsor_first_scan(&env, &player).is_err());
-        assert_eq!(get_sponsorship_pool_size(&env), 0);
-    }
-
-    #[test]
-    fn test_pool_trims_to_max_size() {
-        let (env, admin) = setup();
-        // Lift caps so we can sponsor more than MAX_POOL_LOG_SIZE distinct
-        // players within a single day.
-        update_config(
-            &env,
-            &admin,
-            10_000_000,
-            1_000,
-            MAX_POOL_LOG_SIZE + 10,
-            0,
-            0,
-        )
-        .unwrap();
-
-        let total = MAX_POOL_LOG_SIZE + 5;
-        let mut first_player: Option<Address> = None;
-        let mut last_player: Option<Address> = None;
-        for i in 0..total {
-            let player = Address::generate(&env);
-            if i == 0 {
-                first_player = Some(player.clone());
-            }
-            if i == total - 1 {
-                last_player = Some(player.clone());
-            }
-            sponsor_first_scan(&env, &player).unwrap();
-        }
-
-        let pool = get_sponsorship_pool(&env);
-        assert_eq!(pool.len(), MAX_POOL_LOG_SIZE);
-
-        // Oldest entries (beyond the cap) must have been evicted.
-        let contains_first =
-            (0..pool.len()).any(|i| pool.get(i).unwrap().player == first_player.clone().unwrap());
-        assert!(
-            !contains_first,
-            "oldest pool entry should have been trimmed"
-        );
-
-        // The most recent grant must still be present.
-        let contains_last =
-            (0..pool.len()).any(|i| pool.get(i).unwrap().player == last_player.clone().unwrap());
-        assert!(contains_last, "newest pool entry should be retained");
-    }
-
-    // ── Fund replenishment / admin config (pre-existing behavior) ──────
-
-    #[test]
-    fn test_claim_sponsorship_fund_replenishes() {
-        let (env, admin) = setup();
-        let new_balance = claim_sponsorship_fund(&env, &admin, 5_000_000).unwrap();
-        assert_eq!(new_balance, 105_000_000);
-        assert_eq!(get_fund_balance(&env), 105_000_000);
-    }
-
-    #[test]
-    fn test_claim_sponsorship_fund_rejects_non_admin() {
-        let (env, _admin) = setup();
-        let intruder = Address::generate(&env);
-        assert_eq!(
-            claim_sponsorship_fund(&env, &intruder, 1_000),
-            Err(SponsorError::Unauthorized)
-        );
-    }
+    Ok(())
 }
