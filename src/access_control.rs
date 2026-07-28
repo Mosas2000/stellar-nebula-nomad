@@ -74,6 +74,7 @@
 
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec};
 use soroban_sdk::storage::Instance;
+use crate::error_standard::{ErrorDescriptor, ErrorKind, StandardContractError};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // ERRORS
@@ -118,6 +119,35 @@ pub enum AccessControlError {
     TimelockNotElapsed = 16,
     /// Invalid signer configuration.
     InvalidSignerConfig = 17,
+}
+
+impl StandardContractError for AccessControlError {
+    fn descriptor(self) -> ErrorDescriptor {
+        use AccessControlError::*;
+        let (kind, retryable) = match self {
+            AdminRequired | UnauthorizedRole | InsufficientApprovals => {
+                (ErrorKind::Authorization, false)
+            }
+            RoleNotFound | PermissionNotFound | MultiSigNotConfigured | ProposalNotFound => {
+                (ErrorKind::NotFound, false)
+            }
+            RoleAlreadyGranted | ProposalAlreadyExecuted | AlreadyApproved => {
+                (ErrorKind::Conflict, false)
+            }
+            BatchLimitExceeded => (ErrorKind::ResourceLimit, false),
+            InvalidExpiry | ProposalExpired | InvalidSignerConfig => {
+                (ErrorKind::Validation, false)
+            }
+            TimelockNotElapsed => (ErrorKind::Conflict, true),
+            InitializationFailed | NotImplemented => (ErrorKind::Internal, false),
+        };
+        ErrorDescriptor {
+            module: "access_control",
+            code: self as u32,
+            kind,
+            retryable,
+        }
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
