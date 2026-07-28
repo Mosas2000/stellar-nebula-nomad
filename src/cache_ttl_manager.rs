@@ -39,7 +39,7 @@ pub enum CacheKey {
     /// Timestamp of last cache invalidation.
     LastInvalidation(Symbol),
     /// TTL configuration per cache type.
-    TTLConfig(Symbol),
+    TtlConfig(Symbol),
     /// Stale entry detection flag.
     IsStale(Symbol, Symbol),
 }
@@ -49,13 +49,13 @@ pub enum CacheKey {
 #[contracterror]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u32)]
-pub enum CacheTTLError {
+pub enum CacheTtlError {
     /// Cache entry has expired.
     CacheExpired = 1,
     /// Cache entry not found.
     EntryNotFound = 2,
     /// Invalid TTL value.
-    InvalidTTL = 3,
+    InvalidTtl = 3,
     /// Unauthorized cache operation.
     Unauthorized = 4,
     /// Cache validation failed.
@@ -89,7 +89,7 @@ pub struct InvalidationEvent {
 /// TTL configuration per cache type.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[contracttype]
-pub struct TTLConfig {
+pub struct TtlConfig {
     pub namespace: Symbol,
     pub ttl_seconds: u64,
     pub auto_refresh: bool,
@@ -105,9 +105,9 @@ pub fn cache_with_ttl(
     key: Symbol,
     value: Bytes,
     ttl_seconds: u64,
-) -> Result<(), CacheTTLError> {
+) -> Result<(), CacheTtlError> {
     if ttl_seconds == 0 {
-        return Err(CacheTTLError::InvalidTTL);
+        return Err(CacheTtlError::InvalidTtl);
     }
 
     let cached = CachedData {
@@ -140,14 +140,14 @@ pub fn get_cached_with_ttl(
     env: &Env,
     namespace: Symbol,
     key: Symbol,
-) -> Result<Bytes, CacheTTLError> {
+) -> Result<Bytes, CacheTtlError> {
     let cached: Option<CachedData> = env
         .storage()
         .persistent()
         .get(&CacheKey::CacheEntry(namespace.clone(), key.clone()));
 
     match cached {
-        None => Err(CacheTTLError::EntryNotFound),
+        None => Err(CacheTtlError::EntryNotFound),
         Some(entry) => {
             let current_time = env.ledger().timestamp();
             let age = current_time.saturating_sub(entry.cached_at);
@@ -163,7 +163,7 @@ pub fn get_cached_with_ttl(
                     (namespace, key, current_time),
                 );
 
-                Err(CacheTTLError::CacheExpired)
+                Err(CacheTtlError::CacheExpired)
             } else {
                 Ok(entry.value)
             }
@@ -189,14 +189,14 @@ pub fn is_cache_valid(env: &Env, namespace: Symbol, key: Symbol) -> bool {
 }
 
 /// Get remaining TTL for a cache entry.
-pub fn get_remaining_ttl(env: &Env, namespace: Symbol, key: Symbol) -> Result<u64, CacheTTLError> {
+pub fn get_remaining_ttl(env: &Env, namespace: Symbol, key: Symbol) -> Result<u64, CacheTtlError> {
     let cached: Option<CachedData> = env
         .storage()
         .persistent()
         .get(&CacheKey::CacheEntry(namespace, key));
 
     match cached {
-        None => Err(CacheTTLError::EntryNotFound),
+        None => Err(CacheTtlError::EntryNotFound),
         Some(entry) => {
             let current_time = env.ledger().timestamp();
             let age = current_time.saturating_sub(entry.cached_at);
@@ -270,14 +270,14 @@ pub fn configure_ttl(
     namespace: Symbol,
     ttl_seconds: u64,
     auto_refresh: bool,
-) -> Result<(), CacheTTLError> {
+) -> Result<(), CacheTtlError> {
     admin.require_auth();
 
     if ttl_seconds == 0 {
-        return Err(CacheTTLError::InvalidTTL);
+        return Err(CacheTtlError::InvalidTtl);
     }
 
-    let config = TTLConfig {
+    let config = TtlConfig {
         namespace: namespace.clone(),
         ttl_seconds,
         auto_refresh,
@@ -286,7 +286,7 @@ pub fn configure_ttl(
 
     env.storage()
         .instance()
-        .set(&CacheKey::TTLConfig(namespace.clone()), &config);
+        .set(&CacheKey::TtlConfig(namespace.clone()), &config);
 
     env.events().publish(
         (symbol_short!("cache"), symbol_short!("config")),
@@ -297,11 +297,11 @@ pub fn configure_ttl(
 }
 
 /// Get TTL configuration for a namespace.
-pub fn get_ttl_config(env: &Env, namespace: Symbol) -> TTLConfig {
+pub fn get_ttl_config(env: &Env, namespace: Symbol) -> TtlConfig {
     env.storage()
         .instance()
-        .get(&CacheKey::TTLConfig(namespace.clone()))
-        .unwrap_or(TTLConfig {
+        .get(&CacheKey::TtlConfig(namespace.clone()))
+        .unwrap_or(TtlConfig {
             namespace,
             ttl_seconds: DEFAULT_CACHE_TTL,
             auto_refresh: true,
