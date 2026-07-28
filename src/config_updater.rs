@@ -1,3 +1,5 @@
+//! Timelocked contract configuration changes.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec};
 
 // ─── Constants ────────────────────────────────────────────────────────────────

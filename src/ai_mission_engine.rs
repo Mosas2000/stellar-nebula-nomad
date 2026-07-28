@@ -1,3 +1,5 @@
+//! Player-aware procedural mission generation.
+//!
 use soroban_sdk::{contracttype, symbol_short, Address, Env, String, Symbol, Vec};
 
 use crate::player_profile::get_profile_by_owner;

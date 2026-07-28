@@ -1,3 +1,5 @@
+//! Classification of suspicious gameplay and telemetry anomalies.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec};
 
 #[derive(Clone)]

@@ -1,3 +1,5 @@
+//! Structured, append-only audit event recording.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec};
 
 pub const MAX_QUERY_LIMIT: u32 = 1000;

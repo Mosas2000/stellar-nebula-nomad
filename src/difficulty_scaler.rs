@@ -1,3 +1,5 @@
+//! Dynamic gameplay difficulty scaling.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Env};
 
 /// Maximum player level.

@@ -1,3 +1,5 @@
+//! Authenticated inter-player communication primitives.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, BytesN, Env, Vec};
 
 /// Pair lifetime: 30 days in seconds.

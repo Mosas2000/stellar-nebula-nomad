@@ -1,3 +1,5 @@
+//! Reusable progression and difficulty curves.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec};
 
 use crate::health_monitor;

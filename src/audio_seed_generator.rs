@@ -1,3 +1,5 @@
+//! Deterministic audio seed generation for game content.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Env, BytesN, Vec};
 
 // Audio generation constants

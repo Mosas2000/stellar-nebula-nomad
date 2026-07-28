@@ -1,3 +1,5 @@
+//! Security bounty approval and payout accounting.
+//!
 use soroban_sdk::{
     contracterror, contracttype, symbol_short, Address, Env, Map, String, Symbol, Vec,
 };

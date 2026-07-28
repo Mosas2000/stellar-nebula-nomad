@@ -1,3 +1,5 @@
+//! Bounded export of contract state for external consumers.
+//!
 use soroban_sdk::{contracterror, contracttype, Address, Bytes, Env, Vec};
 
 use crate::player_profile::get_profile_by_owner;

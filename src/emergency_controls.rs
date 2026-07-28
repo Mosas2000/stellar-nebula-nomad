@@ -1,3 +1,5 @@
+//! Emergency pause and delayed recovery controls.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Symbol, Vec};
 
 /// Time delay required before an unpause can be executed (1 hour in seconds).

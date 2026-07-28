@@ -1,3 +1,5 @@
+//! Alliance membership, treasury, and progression management.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, String, Vec};
 
 use crate::input_validation;

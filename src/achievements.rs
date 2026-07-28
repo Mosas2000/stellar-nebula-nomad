@@ -1,3 +1,5 @@
+//! Achievement catalog, progress tracking, and seasonal unlock orchestration.
+//!
 /// # Achievements Module
 ///
 /// Provides the public achievement catalog, on-chain progress tracking,

@@ -1,3 +1,5 @@
+//! Battle-pass seasons, tiers, and reward claims.
+//!
 use soroban_sdk::{contracttype, contracterror, symbol_short, Address, Env, String, Symbol, Vec};
 use crate::seasons::get_current_season;
 
