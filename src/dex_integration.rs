@@ -98,8 +98,3 @@ pub fn cancel_listing(env: &Env, owner: &Address, offer_id: u64) -> Result<DexOf
     Ok(offer)
 }
 
-/// Read an offer by ID.
-#[allow(dead_code)]
-pub fn get_offer(env: &Env, offer_id: u64) -> Option<DexOffer> {
-    env.storage().instance().get(&DexKey::Offer(offer_id))
-}
