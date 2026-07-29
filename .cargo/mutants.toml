@@ -1,0 +1,17 @@
+# cargo-mutants configuration
+
+# Timeout multiplier for mutated test runs
+timeout_multiplier = 2.0
+
+# Minimum kill rate required (80%)
+minimum_kill_rate = 80.0
+
+# Exclude generated code and tests from mutation targets
+exclude_globs = [
+    "tests/**",
+    "benches/**",
+    "examples/**",
+]
+
+# Cargo test command line flags
+cargo_args = ["--", "--quiet"]
