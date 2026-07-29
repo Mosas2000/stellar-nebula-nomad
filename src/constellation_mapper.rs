@@ -1,3 +1,5 @@
+//! Constellation discovery and mapping state.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, BytesN, Env, Vec};
 
 /// Minimum number of stars required to form a valid constellation.

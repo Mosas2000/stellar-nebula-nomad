@@ -1,3 +1,5 @@
+//! Examples of safe cross-module contract composition.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Bytes, BytesN, Env, Symbol, Vec};
 
 use crate::reentrancy_guard::{with_guard, ReentrancyError};

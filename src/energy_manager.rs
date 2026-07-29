@@ -1,3 +1,5 @@
+//! Player energy balances, spending, and regeneration.
+//!
 use crate::ship_nft::{DataKey as ShipDataKey, ShipNft};
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env};
 

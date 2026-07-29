@@ -1,3 +1,5 @@
+//! Recipe-based resource crafting.
+//!
 use crate::recipes::{
     get_recipe, get_recipe_specialization, is_rare, is_unlocked, unlock_rare_recipe, Specialization,
 };

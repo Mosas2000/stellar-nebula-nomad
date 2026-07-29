@@ -1,3 +1,5 @@
+//! Bounty publication, claiming, and settlement.
+//!
 use soroban_sdk::{
     contracterror, contracttype, symbol_short, Address, BytesN, Env, Vec, Map, String,
 };

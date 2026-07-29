@@ -1,3 +1,5 @@
+//! Badge definitions, ownership, and award operations.
+//!
 /// # Badges Module
 ///
 /// Handles Badge NFT minting, display metadata, and transfer logic for the

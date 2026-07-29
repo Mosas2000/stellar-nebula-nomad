@@ -1,3 +1,5 @@
+//! Clan war lifecycle and scoring.
+//!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Vec};
 
 use crate::alliance_manager::{

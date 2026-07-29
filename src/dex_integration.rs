@@ -1,3 +1,5 @@
+//! Decentralized-exchange harvest and swap integration.
+//!
 // DEPRECATED: harvest_resources and related types removed after upstream merge
 // use crate::resource_minter::{harvest_resources, DexOffer, HarvestError, HarvestResult};
 // use crate::NebulaLayout;
