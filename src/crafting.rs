@@ -67,8 +67,10 @@ const BASE_DISCOVERY_PCT: u64 = 5;
 /// Boosted discovery chance (with a "keen eye" node unlocked) out of 100.
 const BOOSTED_DISCOVERY_PCT: u64 = 10;
 
+use crate::ensure_auth;
+
 pub fn craft(env: Env, player: Address, recipe_id: u32) -> Result<(), CraftingError> {
-    player.require_auth();
+    ensure_auth!(player);
     let recipe = get_recipe(&env, recipe_id).map_err(|_| CraftingError::RecipeNotFound)?;
 
     if is_rare(&recipe) && !is_unlocked(&env, &player, recipe_id) {
@@ -173,7 +175,7 @@ pub fn choose_specialization(
     player: Address,
     specialization: Specialization,
 ) -> Result<(), CraftingError> {
-    player.require_auth();
+    ensure_auth!(player);
 
     if get_specialization(env, &player).is_some() {
         return Err(CraftingError::SpecializationAlreadyChosen);
@@ -201,7 +203,7 @@ pub fn is_node_unlocked(env: &Env, player: &Address, node_id: u32) -> bool {
 /// tree. The node must belong to the player's specialization, must not
 /// already be unlocked, and the player must have enough skill points.
 pub fn unlock_skill_node(env: &Env, player: Address, node_id: u32) -> Result<(), CraftingError> {
-    player.require_auth();
+    ensure_auth!(player);
 
     let (_, node_spec, cost) = SKILL_TREE
         .iter()

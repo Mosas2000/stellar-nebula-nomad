@@ -49,16 +49,14 @@ pub struct TreasureVault {
     pub claimed: bool,
 }
 
+use crate::{ensure_auth, storage_get_default, storage_set};
+
 fn next_vault_id(env: &Env) -> Result<u64, VaultError> {
-    let current: u64 = env
-        .storage()
-        .instance()
-        .get(&VaultKey::VaultCounter)
-        .unwrap_or(0);
+    let current: u64 = storage_get_default!(env, VaultKey::VaultCounter, 0);
     let next = current
         .checked_add(1)
         .ok_or(VaultError::ArithmeticOverflow)?;
-    env.storage().instance().set(&VaultKey::VaultCounter, &next);
+    storage_set!(env, VaultKey::VaultCounter, next);
     Ok(next)
 }
 
@@ -73,10 +71,7 @@ fn calculate_bonus_payout(amount: u64, bonus_multiplier: u64) -> Option<u64> {
 }
 
 fn get_min_lock_duration(env: &Env) -> u64 {
-    env.storage()
-        .instance()
-        .get(&VaultKey::MinLockDuration)
-        .unwrap_or(DEFAULT_MIN_LOCK_DURATION)
+    storage_get_default!(env, VaultKey::MinLockDuration, DEFAULT_MIN_LOCK_DURATION)
 }
 
 /// Deposit resources into a time-locked treasure vault.
@@ -90,7 +85,7 @@ pub fn deposit_treasure(
     ship_id: u64,
     amount: u64,
 ) -> Result<TreasureVault, VaultError> {
-    owner.require_auth();
+    ensure_auth!(owner);
 
     if amount == 0 {
         return Err(VaultError::InvalidAmount);
@@ -114,9 +109,7 @@ pub fn deposit_treasure(
         claimed: false,
     };
 
-    env.storage()
-        .instance()
-        .set(&VaultKey::Vault(vault_id), &vault);
+    storage_set!(env, VaultKey::Vault(vault_id), vault);
 
     // Emit VaultDeposited event
     env.events().publish(
@@ -132,7 +125,7 @@ pub fn deposit_treasure(
 /// Returns the original amount plus bonus yield.
 /// The bonus is calculated as: `amount * bonus_multiplier / 10_000`.
 pub fn claim_treasure(env: &Env, owner: &Address, vault_id: u64) -> Result<u64, VaultError> {
-    owner.require_auth();
+    ensure_auth!(owner);
 
     let mut vault: TreasureVault = env
         .storage()
@@ -158,9 +151,7 @@ pub fn claim_treasure(env: &Env, owner: &Address, vault_id: u64) -> Result<u64, 
         .ok_or(VaultError::ArithmeticOverflow)?;
 
     vault.claimed = true;
-    env.storage()
-        .instance()
-        .set(&VaultKey::Vault(vault_id), &vault);
+    storage_set!(env, VaultKey::Vault(vault_id), vault);
 
     // Emit VaultClaimed event
     env.events().publish(

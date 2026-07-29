@@ -41,6 +41,8 @@ pub enum RefundError {
     InvalidPercentage = 5,
 }
 
+use crate::{ensure_auth, storage_get_default, storage_set};
+
 /// ─── Data Types ─────────────────────────────────────────────────────────────
 
 #[derive(Clone, Debug, PartialEq)]
@@ -58,26 +60,22 @@ pub struct RefundRequest {
 
 /// Initialize refund module with default config and set admin.
 pub fn initialize_refund(env: &Env, admin: &Address) {
-    admin.require_auth();
-    env.storage().instance().set(&RefundKey::Admin, admin);
-    env.storage()
-        .instance()
-        .set(&RefundKey::Config, &DEFAULT_REFUND_BPS);
-    env.storage()
-        .instance()
-        .set(&RefundKey::TotalRefunded, &0u64);
+    ensure_auth!(admin);
+    storage_set!(env, RefundKey::Admin, admin);
+    storage_set!(env, RefundKey::Config, DEFAULT_REFUND_BPS);
+    storage_set!(env, RefundKey::TotalRefunded, 0u64);
 }
 
 /// Set refund percentage (basis points). Admin-only.
 pub fn set_refund_percentage(env: &Env, admin: &Address, bps: u32) -> Result<(), RefundError> {
-    admin.require_auth();
+    ensure_auth!(admin);
     if env.storage().instance().get::<RefundKey, Address>(&RefundKey::Admin) != Some(admin.clone()) {
         return Err(RefundError::NotAuthorized);
     }
     if bps > 10_000 {
         return Err(RefundError::InvalidPercentage);
     }
-    env.storage().instance().set(&RefundKey::Config, &bps);
+    storage_set!(env, RefundKey::Config, bps);
     Ok(())
 }
 
@@ -88,7 +86,7 @@ pub fn request_refund(
     tx_hash: BytesN<32>,
     gas_used: u64,
 ) -> Result<RefundRequest, RefundError> {
-    caller.require_auth();
+    ensure_auth!(caller);
 
     if env
         .storage()
@@ -103,11 +101,7 @@ pub fn request_refund(
         return Err(RefundError::NotEligibleForRefund);
     }
 
-    let bps: u32 = env
-        .storage()
-        .instance()
-        .get(&RefundKey::Config)
-        .unwrap_or(DEFAULT_REFUND_BPS);
+    let bps: u32 = storage_get_default!(env, RefundKey::Config, DEFAULT_REFUND_BPS);
     let refund_amount = (gas_used * bps as u64) / 10_000;
 
     let request = RefundRequest {
@@ -119,9 +113,7 @@ pub fn request_refund(
         processed: false,
     };
 
-    env.storage()
-        .instance()
-        .set(&RefundKey::Refund(tx_hash.clone()), &request);
+    storage_set!(env, RefundKey::Refund(tx_hash.clone()), request);
 
     env.events().publish(
         (symbol_short!("refund"), symbol_short!("requested")),
@@ -153,7 +145,7 @@ pub fn process_refund_batch(
     admin: &Address,
     tx_hashes: Vec<BytesN<32>>,
 ) -> Result<u64, RefundError> {
-    admin.require_auth();
+    ensure_auth!(admin);
     if env.storage().instance().get::<RefundKey, Address>(&RefundKey::Admin) != Some(admin.clone()) {
         return Err(RefundError::NotAuthorized);
     }
@@ -171,20 +163,12 @@ pub fn process_refund_batch(
         {
             if !req.processed {
                 req.processed = true;
-                env.storage()
-                    .instance()
-                    .set(&RefundKey::Refund(tx_hash.clone()), &req);
+                storage_set!(env, RefundKey::Refund(tx_hash.clone()), req);
 
                 // Update total refunded counter
-                let mut total = env
-                    .storage()
-                    .instance()
-                    .get(&RefundKey::TotalRefunded)
-                    .unwrap_or(0u64);
+                let mut total: u64 = storage_get_default!(env, RefundKey::TotalRefunded, 0u64);
                 total += req.refund_amount;
-                env.storage()
-                    .instance()
-                    .set(&RefundKey::TotalRefunded, &total);
+                storage_set!(env, RefundKey::TotalRefunded, total);
 
                 env.events().publish(
                     (symbol_short!("refund"), symbol_short!("processed")),
