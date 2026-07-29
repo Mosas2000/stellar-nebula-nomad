@@ -111,6 +111,19 @@ jobs:
           path: coverage/
           retention-days: 14
 
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/cobertura.xml,coverage/lcov.info
+          fail_ci_if_error: false
+          verbose: true
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage/lcov.info
+          fail-on-error: false
+
       - name: Post coverage summary to PR
         if: github.event_name == 'pull_request'
         uses: actions/github-script@v7

@@ -34,3 +34,5 @@ sdk/dist/
 test_snapshots/fuzz_*
 issue.md
 pr.md
+coverage/
+mutants.out/
