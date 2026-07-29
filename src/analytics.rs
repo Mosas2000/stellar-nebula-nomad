@@ -1,6 +1,7 @@
 //! On-chain gameplay metrics aggregation and queries.
 //!
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Vec};
+use crate::error_standard::{ErrorDescriptor, ErrorKind, StandardContractError};
 
 // ── Error ─────────────────────────────────────────────────────────────────────
 
@@ -10,6 +11,17 @@ use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Vec};
 pub enum AnalyticsError {
     /// top_n must be in the range 1..=50.
     InvalidTopN = 1,
+}
+
+impl StandardContractError for AnalyticsError {
+    fn descriptor(self) -> ErrorDescriptor {
+        ErrorDescriptor {
+            module: "analytics",
+            code: self as u32,
+            kind: ErrorKind::Validation,
+            retryable: false,
+        }
+    }
 }
 
 // ── Storage Keys ──────────────────────────────────────────────────────────────

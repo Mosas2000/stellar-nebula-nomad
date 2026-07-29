@@ -5,6 +5,7 @@ use soroban_sdk::{contract, contractimpl, Address, Bytes, BytesN, Env, String, S
 use crate::nebula_explorer::{NebulaLayout, Rarity};
 
 mod access_control;
+pub mod error_standard;
 mod analytics;
 mod blueprint_factory;
 mod gifting_system;

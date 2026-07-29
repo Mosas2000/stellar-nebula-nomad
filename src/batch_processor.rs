@@ -3,6 +3,7 @@
 use soroban_sdk::{contracterror, contracttype, symbol_short, Address, Env, Vec};
 
 use crate::rate_limiter;
+use crate::error_standard::{ErrorDescriptor, ErrorKind, StandardContractError};
 
 /// Maximum number of operations per batch.
 ///
@@ -45,6 +46,23 @@ pub enum BatchError {
     GasLimitExceeded = 4,
     /// A referenced ship ID was not found in the provided list.
     ShipNotFound = 5,
+}
+
+impl StandardContractError for BatchError {
+    fn descriptor(self) -> ErrorDescriptor {
+        let (kind, retryable) = match self {
+            Self::BatchLimitExceeded | Self::EmptyBatch => (ErrorKind::Validation, false),
+            Self::ShipNotFound => (ErrorKind::NotFound, false),
+            Self::GasLimitExceeded => (ErrorKind::ResourceLimit, true),
+            Self::OperationFailed => (ErrorKind::Internal, true),
+        };
+        ErrorDescriptor {
+            module: "batch",
+            code: self as u32,
+            kind,
+            retryable,
+        }
+    }
 }
 
 // ─── Data Types ───────────────────────────────────────────────────────────
