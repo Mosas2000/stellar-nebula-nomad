@@ -176,14 +176,6 @@ pub fn get_vault(env: &Env, vault_id: u64) -> Option<TreasureVault> {
     env.storage().instance().get(&VaultKey::Vault(vault_id))
 }
 
-/// Set the minimum lock duration (admin function).
-#[allow(dead_code)]
-pub fn set_min_lock_duration(env: &Env, duration: u64) {
-    env.storage()
-        .instance()
-        .set(&VaultKey::MinLockDuration, &duration);
-}
-
 // ── Tests (Issue #239: arithmetic safety) ───────────────────────────────────
 
 #[cfg(test)]
