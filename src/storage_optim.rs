@@ -45,7 +45,7 @@ pub enum StorageError {
     /// Burst read limit exceeded.
     BurstLimitExceeded = 3,
     /// Invalid TTL value supplied.
-    InvalidTTL = 4,
+    InvalidTtl = 4,
     /// Caller is not authorized.
     Unauthorized = 5,
     /// Invalid key supplied.
@@ -294,7 +294,7 @@ pub fn update_bump_config(
     admin.require_auth();
 
     if default_ttl == 0 || max_ttl == 0 || default_ttl > max_ttl {
-        return Err(StorageError::InvalidTTL);
+        return Err(StorageError::InvalidTtl);
     }
 
     let config = BumpConfig {
