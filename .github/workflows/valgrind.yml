@@ -1,0 +1,38 @@
+name: Memory Leak Detection
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  valgrind-leak-check:
+    name: Memory Leak Detection (Valgrind)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Valgrind and jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y valgrind jq
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-valgrind-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run Memory Leak Detection
+        run: ./scripts/valgrind-leak-check.sh
